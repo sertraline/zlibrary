@@ -1,5 +1,9 @@
 # zlibrary
-(prototype)
+(prototype)  
+
+
+### Install  
+`pip install zlibrary`  
 
 
 ### Example
