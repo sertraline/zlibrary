@@ -1,12 +1,13 @@
 import asyncio
 import aiohttp
 import traceback
-import html
 import logging
 import sys
 
 from bs4 import BeautifulSoup as bsoup
 from typing import Callable
+from urllib.parse import quote
+
 from .logger import logger
 from .exception import LoopError, EmptyQueryError, NoDomainError, ParseError
 
@@ -36,11 +37,80 @@ async def request(url):
         raise Exception(e)
 
 
+class ListItem(dict):
+    parsed = None
+
+    def __init__(self, request, domain):
+        super().__init__()
+        self.__r = request
+        self.domain = domain
+
+    async def fetch(self): 
+        page = await self.__r(self['url'])
+        soup = bsoup(page, features='lxml')
+
+        wrap = soup.find('div', { 'class': 'row cardBooks' })
+        if not wrap:
+            raise ParseError("Failed to parse %s" % self['url'])
+
+        parsed = {}
+        parsed['url'] = self['url']
+        parsed['name'] = self['name']
+
+        anchor = wrap.find('a', { 'class': 'details-book-cover' })
+        if anchor:
+            parsed['cover'] = anchor.get('href')
+
+        desc = wrap.find('div', { 'id': 'bookDescriptionBox' })
+        parsed['description'] = desc.text.strip()
+
+        details = wrap.find('div', { 'class': 'bookDetailsBox' })
+
+        properties = [
+                'year',
+                'edition',
+                'publisher',
+                'language',
+                'isbn 10',
+                'isbn 13',
+        ]
+        for prop in properties:
+            x = details.find('div', { 'class': 'property_' + prop })
+            if x:
+                x = x.find('div', { 'class': 'property_value' })
+                parsed[prop] = x.text.strip()
+
+        cat = details.find('div', { 'class': 'property_categories' })
+        if cat:
+            cat = cat.find('div', { 'class': 'property_value' })
+            link = cat.find('a')
+            parsed['categories'] = cat.text.strip()
+            parsed['categories_url'] = '%s%s' % (self.domain, link.get('href'))
+
+        file = details.find('div', { 'class': 'property__file'})
+        file = file.text.strip().split(',')
+        parsed['extension'] = file[0].split('\n')[1]
+        parsed['size'] = file[1]
+        
+        rating = wrap.find('div', { 'class': 'book-rating'})
+        parsed['rating'] = ''.join(filter(lambda x: bool(x), rating.text.replace('\n', '').split(' ')))
+
+        det = soup.find('div', { 'class': 'book-details-button' })
+        dl_link = det.find('a', { 'class': 'dlButton' })
+        if not dl_link:
+            raise ParseError("Could not parse the download link.")
+        
+        parsed['download_url'] = '%s%s' % (self.domain, dl_link.get('href'))
+        self.parsed = parsed
+        return parsed
+
+
 class ResultPaginator:
     __url = ""
     __pos = 0
     __r = None
 
+    domain = ""
     page = 1
     total = 0
     count = 10
@@ -51,10 +121,11 @@ class ResultPaginator:
         1: []
     }
 
-    def __init__(self, url: str, count: int, request: Callable):
+    def __init__(self, url: str, count: int, request: Callable, domain: str):
         self.count = count
         self.__url = url
         self.__r = request
+        self.domain = domain
 
     def parse_page(self, page):
         soup = bsoup(page, features='lxml')
@@ -66,7 +137,7 @@ class ResultPaginator:
         if check_notfound:
             logger.debug("Nothing found.")
             self.storage = {
-                1: ["NOTFOUND"]
+                1: []
             }
             return
 
@@ -77,7 +148,7 @@ class ResultPaginator:
         self.storage[self.page] = []
 
         for idx, book in enumerate(book_list, start=1):
-            js = {}
+            js = ListItem(self.__r, self.domain)
 
             book = book.find('table', { 'class': 'resItemTable' })
             cover = book.find('div', { 'class': 'itemCoverWrapper' })
@@ -90,7 +161,7 @@ class ResultPaginator:
 
             book_url = cover.find('a')
             if book_url:
-                js['url'] = book_url.get('href')
+                js['url'] = '%s%s' % (self.domain, book_url.get('href'))
             img = cover.find('img')
             if img:
                 js['cover'] = img.get('data-src')
@@ -104,7 +175,7 @@ class ResultPaginator:
             publisher = data_table.find('a', { 'title': 'Publisher' })
             if publisher:
                 js['publisher'] = publisher.text.strip()
-                js['publisher_url'] = publisher.get('href')
+                js['publisher_url'] = '%s%s' % (self.domain, publisher.get('href'))
 
             authors = data_table.find('div', { 'class': 'authors' })
             anchors = authors.findAll('a')
@@ -113,16 +184,18 @@ class ResultPaginator:
             for adx, an in enumerate(anchors, start=1):
                 js['authors'].append({
                     'author': an.text.strip(),
-                    'author_url': an.get('href')
+                    'author_url': '%s%s' % (self.domain, an.get('href'))
                 })
-            
+
             year = data_table.find('div', { 'class': 'property_year' })
             if year:
-                js['year'] = year.text.strip().split('\n')[1]
+                year = year.find('div', { 'class': 'property_value' })
+                js['year'] = year.text.strip()
 
             lang = data_table.find('div', { 'class': 'property_language' })
             if lang:
-                js['language'] = lang.text.strip().split('\n')[1]
+                lang = lang.find('div', { 'class': 'property_value' })
+                js['language'] = lang.text.strip()
 
             file = data_table.find('div', { 'class': 'property__file'})
             file = file.text.strip().split(',')
@@ -154,9 +227,6 @@ class ResultPaginator:
         if self.__pos >= len(self.storage[self.page]):
             await self.next_page()
 
-        if self.__pos >= len(self.storage[self.page]):
-            self.__pos = 0
-
         self.result = self.storage[self.page][self.__pos : self.__pos + self.count]
         self.__pos += self.count
         return self.result
@@ -169,6 +239,8 @@ class ResultPaginator:
         subtract = self.__pos - self.count
         if subtract < 0:
             subtract = 0
+        if self.__pos <= 0:
+            self.__pos = self.count
 
         self.result = self.storage[self.page][subtract : self.__pos]
         return self.result
@@ -177,6 +249,8 @@ class ResultPaginator:
         if self.page < self.total:
             self.page += 1
             self.__pos = 0
+        else:
+            self.__pos = len(self.storage[self.page]) - self.count - 1
 
         if not self.storage.get(self.page):
             page = await self.fetch_page()
@@ -185,6 +259,9 @@ class ResultPaginator:
     async def prev_page(self):
         if self.page > 1:
             self.page -= 1
+        else:
+            self.__pos = 0
+            return
 
         if not self.storage.get(self.page):
             page = await self.fetch_page()
@@ -227,7 +304,7 @@ class AsyncZlib:
         if not q:
             raise EmptyQueryError
 
-        payload = "%s/s/%s?" % (self.domain, html.escape(q))
+        payload = "%s/s/%s?" % (self.domain, quote(q))
         if precise:
             payload += '&e=1'
         if from_year:
@@ -245,7 +322,7 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r)        
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)        
         await paginator.init()
         return paginator
 
@@ -254,7 +331,7 @@ class AsyncZlib:
         if not q:
             raise EmptyQueryError
 
-        payload = "%s/s/%s?" % (self.domain, html.escape(q))
+        payload = "%s/s/%s?" % (self.domain, quote(q))
         if phrase:
             payload += '&type=phrase'
         else:
@@ -277,7 +354,7 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r)        
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)        
         await paginator.init()
         return paginator
 
