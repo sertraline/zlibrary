@@ -62,7 +62,8 @@ class ListItem(dict):
             parsed['cover'] = anchor.get('href')
 
         desc = wrap.find('div', { 'id': 'bookDescriptionBox' })
-        parsed['description'] = desc.text.strip()
+        if desc:
+            parsed['description'] = desc.text.strip()
 
         details = wrap.find('div', { 'class': 'bookDetailsBox' })
 
