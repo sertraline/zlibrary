@@ -28,11 +28,11 @@ async def main():
     prev_set = await paginator.prev()
 
     # create a paginator of computer science with max count of 50
-    paginator_cs = await lib.search(q="computer science", count=50)
+    paginator = await lib.search(q="computer science", count=50)
     # fetching results (0 ... 50)
-    next_set = await paginator_cs.next()
+    next_set = await paginator.next()
     # calling another next_set will fire up a request to fetch the next page
-    next_set = await paginator_cs.next()
+    next_set = await paginator.next()
 
     # get current result set
     current_set = paginator.result
@@ -88,7 +88,6 @@ async def main():
     #     'rating': '5.0/5.0',
     #     'download_url': 'https://x.x/dl/123'
     # }
-
 
 
 if __name__ == '__main__':

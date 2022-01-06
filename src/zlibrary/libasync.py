@@ -70,15 +70,19 @@ class ListItem(dict):
                 'year',
                 'edition',
                 'publisher',
-                'language',
-                'isbn 10',
-                'isbn 13',
+                'language'
         ]
         for prop in properties:
             x = details.find('div', { 'class': 'property_' + prop })
             if x:
                 x = x.find('div', { 'class': 'property_value' })
                 parsed[prop] = x.text.strip()
+
+        isbns = details.findAll('div', { 'class': 'property_isbn' })
+        for isbn in isbns:
+            txt = isbn.find('div', { 'class': 'property_label' }).text.strip(':')
+            val = isbn.find('div', { 'class': 'property_value' })
+            parsed[txt] = val.text.strip()
 
         cat = details.find('div', { 'class': 'property_categories' })
         if cat:
