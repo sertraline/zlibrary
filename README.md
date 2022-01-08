@@ -103,3 +103,21 @@ import logging
 logging.getLogger("zlibrary").addHandler(logging.StreamHandler())
 logging.getLogger("zlibrary").setLevel(logging.DEBUG)
 ```  
+
+### Login
+```python
+lib = zlibrary.AsyncZlib()
+await lib.login(email, password)
+
+# next requests will use cookies gathered on login
+await lib.init()
+```  
+
+### Search params
+```python
+await lib.search(q="Deleuze", from_year=1976, to_year=2005,
+                 lang=["english", "russian"], extensions=["pdf", "epub"])
+
+await lib.full_text_search(q="The circuits of surveillance cameras are themselves part of the decor of simulacra",
+                           lang=["english"], extensions=["pdf"], phrase=True, exact=True)
+```  

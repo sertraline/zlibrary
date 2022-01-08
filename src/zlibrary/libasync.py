@@ -13,28 +13,36 @@ from .exception import LoopError, EmptyQueryError, NoDomainError, ParseError
 
 
 ZLIB_DOMAIN = "https://z-lib.org/"
+LOGIN_DOMAIN = "https://singlelogin.me/rpc.php"
+HEAD = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+}
+TIMEOUT = aiohttp.ClientTimeout(
+    total=90,
+    connect=0,
+    sock_connect=0,
+    sock_read=0
+)
 
-
-async def request(url):
-    head = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
-    }
-    timeout = aiohttp.ClientTimeout(
-        total=90,
-        connect=0,
-        sock_connect=0,
-        sock_read=0
-    )
+async def request(url, jar=None):
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as sess:
+        async with aiohttp.ClientSession(headers=HEAD, cookie_jar=jar, timeout=TIMEOUT) as sess:
             logger.info("GET %s" % url)
             async with sess.get(url) as resp:
                 return await resp.text()
     except asyncio.exceptions.CancelledError:
         raise LoopError("Asyncio loop had been closed before request could finish.")
-    except Exception as e:
-        logger.critical(traceback.format_exc())
-        raise Exception(e)
+
+
+async def post(url, data):
+    try:
+        async with aiohttp.ClientSession(headers=HEAD, timeout=TIMEOUT,
+                                         cookie_jar=aiohttp.CookieJar()) as sess:
+            logger.info("POST %s" % url)
+            async with sess.post(url, data=data) as resp:
+                return (await resp.text(), sess.cookie_jar)
+    except asyncio.exceptions.CancelledError:
+        raise LoopError("Asyncio loop had been closed before request could finish.")
 
 
 class ListItem(dict):
@@ -189,7 +197,7 @@ class ResultPaginator:
             for adx, an in enumerate(anchors, start=1):
                 js['authors'].append({
                     'author': an.text.strip(),
-                    'author_url': '%s%s' % (self.domain, an.get('href'))
+                    'author_url': '%s%s' % (self.domain, quote(an.get('href')))
                 })
 
             year = data_table.find('div', { 'class': 'property_year' })
@@ -280,6 +288,9 @@ class AsyncZlib:
     semaphore = True
     __semaphore = asyncio.Semaphore(64)
 
+    cookies = None
+    _jar = None
+
     async def init(self, no_semaphore=False):
         page = await self._r(ZLIB_DOMAIN)
         soup = bsoup(page, features='lxml')
@@ -304,13 +315,37 @@ class AsyncZlib:
         else:
             return await request(url)
 
-    async def search(self, q="", precise=False, from_year=None, to_year=None,
+    async def login(self, email, password):
+        data = {
+            "isModal": True,
+            "email": email,
+            "password": password,
+            "site_mode": "books",
+            "action": "login",
+            "isSingleLogin": 1,
+            "redirectUrl": "",
+            "gg_json_mode": 1
+        }
+        resp, jar = await post(LOGIN_DOMAIN, data)
+        self._jar = jar
+
+        dom = LOGIN_DOMAIN.split('.')
+        dom = dom[0] + '.' + dom[1].split('/')[0]
+        self.cookies = jar.filter_cookies(dom)
+
+
+    async def logout(self):
+        self._jar = None
+        self.cookies = None
+
+
+    async def search(self, q="", exact=False, from_year=None, to_year=None,
                      lang=[], extensions=[], count=10) -> ResultPaginator:
         if not q:
             raise EmptyQueryError
 
         payload = "%s/s/%s?" % (self.domain, quote(q))
-        if precise:
+        if exact:
             payload += '&e=1'
         if from_year:
             assert str(from_year).isdigit()
@@ -331,18 +366,24 @@ class AsyncZlib:
         await paginator.init()
         return paginator
 
-    async def full_text_search(self, q="", precise=False, phrase=True, words=False,
+    async def full_text_search(self, q="", exact=False, phrase=False, words=False,
                                from_year=None, to_year=None, lang=[], extensions=[], count=10) -> ResultPaginator:
         if not q:
             raise EmptyQueryError
-
-        payload = "%s/s/%s?" % (self.domain, quote(q))
+        if not phrase and not words:
+            raise Exception("You should either specify 'words=True' to match words, or 'phrase=True' to match phrase.")
+        
+        payload = "%s/fulltext/%s?" % (self.domain, quote(q))
         if phrase:
+            check = q.split(' ')
+            if len(check) < 2: 
+                raise Exception(("At least 2 words must be provided for phrase search. "
+                                 "Use 'words=True' to match a single word."))
             payload += '&type=phrase'
         else:
             payload += '&type=words'
 
-        if precise:
+        if exact:
             payload += '&e=1'
         if from_year:
             assert str(from_year).isdigit()
