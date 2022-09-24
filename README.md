@@ -121,3 +121,20 @@ await lib.search(q="Deleuze", from_year=1976, to_year=2005,
 await lib.full_text_search(q="The circuits of surveillance cameras are themselves part of the decor of simulacra",
                            lang=["english"], extensions=["pdf"], phrase=True, exact=True)
 ```  
+
+### Proxy support 
+```python
+
+# You can add multiple proxies in the chain:
+# proxy_list=[
+#    "http://login:password@addr:port",
+#    "socks4://addr:port",
+#    "socks5://addr:port"
+# ]
+
+lib = zlibrary.AsyncZlib(proxy_list=["socks5://127.0.0.1:9050"])
+
+await lib.login(email, password)
+await lib.init()
+
+```

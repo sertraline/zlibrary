@@ -9,7 +9,9 @@ from typing import Callable
 from urllib.parse import quote
 
 from .logger import logger
-from .exception import LoopError, EmptyQueryError, NoDomainError, ParseError
+from .exception import LoopError, EmptyQueryError, NoDomainError, ParseError, ProxyNotMatchError
+
+from aiohttp_socks import ChainProxyConnector
 
 
 ZLIB_DOMAIN = "https://z-lib.org/"
@@ -20,13 +22,14 @@ HEAD = {
 TIMEOUT = aiohttp.ClientTimeout(
     total=90,
     connect=0,
-    sock_connect=0,
-    sock_read=0
+    sock_connect=60,
+    sock_read=90
 )
 
-async def request(url, jar=None):
+async def request(url, jar=None, proxy_list=None):
     try:
-        async with aiohttp.ClientSession(headers=HEAD, cookie_jar=jar, timeout=TIMEOUT) as sess:
+        async with aiohttp.ClientSession(headers=HEAD, cookie_jar=jar, timeout=TIMEOUT,
+                                         connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
             logger.info("GET %s" % url)
             async with sess.get(url) as resp:
                 return await resp.text()
@@ -34,10 +37,11 @@ async def request(url, jar=None):
         raise LoopError("Asyncio loop had been closed before request could finish.")
 
 
-async def post(url, data):
+async def post(url, data, proxy_list=None):
     try:
         async with aiohttp.ClientSession(headers=HEAD, timeout=TIMEOUT,
-                                         cookie_jar=aiohttp.CookieJar()) as sess:
+                                         cookie_jar=aiohttp.CookieJar(),
+                                         connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
             logger.info("POST %s" % url)
             async with sess.post(url, data=data) as resp:
                 return (await resp.text(), sess.cookie_jar)
@@ -53,7 +57,7 @@ class ListItem(dict):
         self.__r = request
         self.domain = domain
 
-    async def fetch(self): 
+    async def fetch(self):
         page = await self.__r(self['url'])
         soup = bsoup(page, features='lxml')
 
@@ -104,7 +108,7 @@ class ListItem(dict):
         file = file.text.strip().split(',')
         parsed['extension'] = file[0].split('\n')[1]
         parsed['size'] = file[1]
-        
+
         rating = wrap.find('div', { 'class': 'book-rating'})
         parsed['rating'] = ''.join(filter(lambda x: bool(x), rating.text.replace('\n', '').split(' ')))
 
@@ -112,7 +116,7 @@ class ListItem(dict):
         dl_link = det.find('a', { 'class': 'dlButton' })
         if not dl_link:
             raise ParseError("Could not parse the download link.")
-        
+
         parsed['download_url'] = '%s%s' % (self.domain, dl_link.get('href'))
         self.parsed = parsed
         return parsed
@@ -217,9 +221,9 @@ class ResultPaginator:
 
             rating = data_table.find('div', { 'class': 'property_rating'})
             js['rating'] = ''.join(filter(lambda x: bool(x), rating.text.replace('\n', '').split(' ')))
-            
+
             self.storage[self.page].append(js)
-        
+
         scripts = soup.findAll('script')
         for scr in scripts:
             txt = scr.text
@@ -291,6 +295,16 @@ class AsyncZlib:
     cookies = None
     _jar = None
 
+    proxy_list = None
+
+    def __init__(self, proxy_list=None):
+        if proxy_list:
+            if type(proxy_list) is list:
+                self.proxy_list = proxy_list
+                logger.debug("Set proxy_list: %s", str(proxy_list))
+            else:
+                raise ProxyNotMatchError
+
     async def init(self, no_semaphore=False):
         page = await self._r(ZLIB_DOMAIN)
         soup = bsoup(page, features='lxml')
@@ -302,7 +316,9 @@ class AsyncZlib:
         if not dom:
             raise NoDomainError
 
-        self.domain = "https://%s" % dom.text.strip()
+        self.domain = "%s" % dom.text.strip()
+        if not self.domain.startswith('http'):
+            self.domain = 'https://' + self.domain
         logger.debug("Set working domain: %s" % self.domain)
 
         if no_semaphore:
@@ -311,9 +327,9 @@ class AsyncZlib:
     async def _r(self, url: str):
         if self.semaphore:
             async with self.__semaphore:
-                return await request(url)
+                return await request(url, proxy_list=self.proxy_list)
         else:
-            return await request(url)
+            return await request(url, proxy_list=self.proxy_list)
 
     async def login(self, email, password):
         data = {
@@ -326,7 +342,8 @@ class AsyncZlib:
             "redirectUrl": "",
             "gg_json_mode": 1
         }
-        resp, jar = await post(LOGIN_DOMAIN, data)
+
+        resp, jar = await post(LOGIN_DOMAIN, data, proxy_list=self.proxy_list)
         self._jar = jar
 
         dom = LOGIN_DOMAIN.split('.')
@@ -362,7 +379,7 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)        
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)
         await paginator.init()
         return paginator
 
@@ -372,11 +389,11 @@ class AsyncZlib:
             raise EmptyQueryError
         if not phrase and not words:
             raise Exception("You should either specify 'words=True' to match words, or 'phrase=True' to match phrase.")
-        
+
         payload = "%s/fulltext/%s?" % (self.domain, quote(q))
         if phrase:
             check = q.split(' ')
-            if len(check) < 2: 
+            if len(check) < 2:
                 raise Exception(("At least 2 words must be provided for phrase search. "
                                  "Use 'words=True' to match a single word."))
             payload += '&type=phrase'
@@ -400,7 +417,6 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)        
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)
         await paginator.init()
         return paginator
-
