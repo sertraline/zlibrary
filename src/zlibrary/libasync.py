@@ -7,6 +7,7 @@ import sys
 from bs4 import BeautifulSoup as bsoup
 from typing import Callable
 from urllib.parse import quote
+from typing import List
 
 from .logger import logger
 from .exception import LoopError, EmptyQueryError, NoDomainError, ParseError, ProxyNotMatchError
@@ -16,6 +17,10 @@ from aiohttp_socks import ChainProxyConnector
 
 ZLIB_DOMAIN = "https://z-lib.org/"
 LOGIN_DOMAIN = "https://singlelogin.me/rpc.php"
+
+ZLIB_TOR_DOMAIN = "http://bookszlibb74ugqojhzhg2a63w5i2atv5bqarulgczawnbmsb6s6qead.onion"
+LOGIN_TOR_DOMAIN = "http://loginzlib2vrak5zzpcocc3ouizykn6k5qecgj2tzlnab5wcbqhembyd.onion/rpc.php"
+
 HEAD = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
 }
@@ -26,9 +31,9 @@ TIMEOUT = aiohttp.ClientTimeout(
     sock_read=90
 )
 
-async def request(url, jar=None, proxy_list=None):
+async def request(url, cookies=None, proxy_list=None):
     try:
-        async with aiohttp.ClientSession(headers=HEAD, cookie_jar=jar, timeout=TIMEOUT,
+        async with aiohttp.ClientSession(headers=HEAD, cookies=cookies, timeout=TIMEOUT,
                                          connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
             logger.info("GET %s" % url)
             async with sess.get(url) as resp:
@@ -37,10 +42,21 @@ async def request(url, jar=None, proxy_list=None):
         raise LoopError("Asyncio loop had been closed before request could finish.")
 
 
+async def request_cookies(url, cookies=None, proxy_list=None):
+    try:
+        async with aiohttp.ClientSession(headers=HEAD, cookie_jar=aiohttp.CookieJar(unsafe=True), cookies=cookies, timeout=TIMEOUT,
+                                         connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
+            logger.info("GET %s" % url)
+            async with sess.get(url) as resp:
+                return (await resp.text(), sess.cookie_jar)
+    except asyncio.exceptions.CancelledError:
+        raise LoopError("Asyncio loop had been closed before request could finish.")
+
+
 async def post(url, data, proxy_list=None):
     try:
         async with aiohttp.ClientSession(headers=HEAD, timeout=TIMEOUT,
-                                         cookie_jar=aiohttp.CookieJar(),
+                                         cookie_jar=aiohttp.CookieJar(unsafe=True),
                                          connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
             logger.info("POST %s" % url)
             async with sess.post(url, data=data) as resp:
@@ -52,10 +68,10 @@ async def post(url, data, proxy_list=None):
 class ListItem(dict):
     parsed = None
 
-    def __init__(self, request, domain):
+    def __init__(self, request, mirror):
         super().__init__()
         self.__r = request
-        self.domain = domain
+        self.mirror = mirror
 
     async def fetch(self):
         page = await self.__r(self['url'])
@@ -102,7 +118,7 @@ class ListItem(dict):
             cat = cat.find('div', { 'class': 'property_value' })
             link = cat.find('a')
             parsed['categories'] = cat.text.strip()
-            parsed['categories_url'] = '%s%s' % (self.domain, link.get('href'))
+            parsed['categories_url'] = '%s%s' % (self.mirror, link.get('href'))
 
         file = details.find('div', { 'class': 'property__file'})
         file = file.text.strip().split(',')
@@ -117,7 +133,7 @@ class ListItem(dict):
         if not dl_link:
             raise ParseError("Could not parse the download link.")
 
-        parsed['download_url'] = '%s%s' % (self.domain, dl_link.get('href'))
+        parsed['download_url'] = '%s%s' % (self.mirror, dl_link.get('href'))
         self.parsed = parsed
         return parsed
 
@@ -127,7 +143,7 @@ class ResultPaginator:
     __pos = 0
     __r = None
 
-    domain = ""
+    mirror = ""
     page = 1
     total = 0
     count = 10
@@ -138,11 +154,11 @@ class ResultPaginator:
         1: []
     }
 
-    def __init__(self, url: str, count: int, request: Callable, domain: str):
+    def __init__(self, url: str, count: int, request: Callable, mirror: str):
         self.count = count
         self.__url = url
         self.__r = request
-        self.domain = domain
+        self.mirror = mirror
 
     def parse_page(self, page):
         soup = bsoup(page, features='lxml')
@@ -165,7 +181,7 @@ class ResultPaginator:
         self.storage[self.page] = []
 
         for idx, book in enumerate(book_list, start=1):
-            js = ListItem(self.__r, self.domain)
+            js = ListItem(self.__r, self.mirror)
 
             book = book.find('table', { 'class': 'resItemTable' })
             cover = book.find('div', { 'class': 'itemCoverWrapper' })
@@ -178,7 +194,7 @@ class ResultPaginator:
 
             book_url = cover.find('a')
             if book_url:
-                js['url'] = '%s%s' % (self.domain, book_url.get('href'))
+                js['url'] = '%s%s' % (self.mirror, book_url.get('href'))
             img = cover.find('img')
             if img:
                 js['cover'] = img.get('data-src')
@@ -192,7 +208,7 @@ class ResultPaginator:
             publisher = data_table.find('a', { 'title': 'Publisher' })
             if publisher:
                 js['publisher'] = publisher.text.strip()
-                js['publisher_url'] = '%s%s' % (self.domain, publisher.get('href'))
+                js['publisher_url'] = '%s%s' % (self.mirror, publisher.get('href'))
 
             authors = data_table.find('div', { 'class': 'authors' })
             anchors = authors.findAll('a')
@@ -201,7 +217,7 @@ class ResultPaginator:
             for adx, an in enumerate(anchors, start=1):
                 js['authors'].append({
                     'author': an.text.strip(),
-                    'author_url': '%s%s' % (self.domain, quote(an.get('href')))
+                    'author_url': '%s%s' % (self.mirror, quote(an.get('href')))
                 })
 
             year = data_table.find('div', { 'class': 'property_year' })
@@ -288,25 +304,50 @@ class ResultPaginator:
 
 
 class AsyncZlib:
-    domain = ""
     semaphore = True
-    __semaphore = asyncio.Semaphore(64)
+    onion = False
 
-    cookies = None
+    __semaphore = asyncio.Semaphore(64)
     _jar = None
 
+    cookies = None
     proxy_list = None
 
-    def __init__(self, proxy_list=None):
+    mirror = ""
+    login_domain = None
+    domain = None
+
+    def __init__(self, onion: bool = False, proxy_list: list = None, no_semaphore: bool = False):
         if proxy_list:
             if type(proxy_list) is list:
                 self.proxy_list = proxy_list
                 logger.debug("Set proxy_list: %s", str(proxy_list))
             else:
                 raise ProxyNotMatchError
+        
+        if onion:
+            self.onion = True
+            self.login_domain = LOGIN_TOR_DOMAIN
+            self.domain = ZLIB_TOR_DOMAIN
 
-    async def init(self, no_semaphore=False):
-        page = await self._r(ZLIB_DOMAIN)
+            if not proxy_list:
+                print("Tor proxy must be set to route through onion domains.\n"
+                      "Set up tor service and use: onion=True, proxy_list=['socks5://127.0.0.1:9050']")
+                exit(1)
+        else:
+            self.login_domain = LOGIN_DOMAIN
+            self.domain = ZLIB_DOMAIN
+
+        if no_semaphore:
+            self.semaphore = False
+
+    async def init(self):
+        if self.onion:
+            self.mirror = self.domain
+            logger.debug("Set working mirror: %s" % self.mirror)
+            return
+
+        page = await self._r(self.domain)
         soup = bsoup(page, features='lxml')
         check = soup.find('div', { 'class': 'domain-check-error hidden' })
         if not check:
@@ -316,22 +357,19 @@ class AsyncZlib:
         if not dom:
             raise NoDomainError
 
-        self.domain = "%s" % dom.text.strip()
-        if not self.domain.startswith('http'):
-            self.domain = 'https://' + self.domain
-        logger.debug("Set working domain: %s" % self.domain)
-
-        if no_semaphore:
-            self.semaphore = False
+        self.mirror = "%s" % dom.text.strip()
+        if not self.mirror.startswith('http'):
+            self.mirror = 'https://' + self.mirror
+        logger.debug("Set working mirror: %s" % self.mirror)
 
     async def _r(self, url: str):
         if self.semaphore:
             async with self.__semaphore:
-                return await request(url, proxy_list=self.proxy_list)
+                return await request(url, proxy_list=self.proxy_list, cookies=self.cookies)
         else:
-            return await request(url, proxy_list=self.proxy_list)
+            return await request(url, proxy_list=self.proxy_list, cookies=self.cookies)
 
-    async def login(self, email, password):
+    async def login(self, email: str, password: str):
         data = {
             "isModal": True,
             "email": email,
@@ -343,25 +381,32 @@ class AsyncZlib:
             "gg_json_mode": 1
         }
 
-        resp, jar = await post(LOGIN_DOMAIN, data, proxy_list=self.proxy_list)
+        resp, jar = await post(self.login_domain, data, proxy_list=self.proxy_list)
         self._jar = jar
 
-        dom = LOGIN_DOMAIN.split('.')
-        dom = dom[0] + '.' + dom[1].split('/')[0]
-        self.cookies = jar.filter_cookies(dom)
+        self.cookies = {}
+        for cookie in self._jar:
+            self.cookies[cookie.key] = cookie.value
+        logger.debug("Set cookies: %s", self.cookies)
 
+        if self.onion:
+            resp, jar = await request_cookies(self.domain + '/?remix_userkey=%s&remix_userid=%s' % (self.cookies['remix_userkey'], self.cookies['remix_userid']),
+                                              proxy_list=self.proxy_list, cookies=self.cookies)
+            self._jar = jar
+            for cookie in self._jar:
+                self.cookies[cookie.key] = cookie.value
+            logger.debug("Set cookies: %s", self.cookies)
 
     async def logout(self):
         self._jar = None
         self.cookies = None
 
-
-    async def search(self, q="", exact=False, from_year=None, to_year=None,
-                     lang=[], extensions=[], count=10) -> ResultPaginator:
+    async def search(self, q: str = "", exact: bool = False, from_year: int = None, to_year: int = None,
+                     lang: List[str] = [], extensions: List[str] = [], count: int = 10) -> ResultPaginator:
         if not q:
             raise EmptyQueryError
 
-        payload = "%s/s/%s?" % (self.domain, quote(q))
+        payload = "%s/s/%s?" % (self.mirror, quote(q))
         if exact:
             payload += '&e=1'
         if from_year:
@@ -379,18 +424,19 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()
         return paginator
 
-    async def full_text_search(self, q="", exact=False, phrase=False, words=False,
-                               from_year=None, to_year=None, lang=[], extensions=[], count=10) -> ResultPaginator:
+    async def full_text_search(self, q: str = "", exact: bool = False, phrase: bool = False,
+                               words: bool = False, from_year: int = None, to_year: int = None,
+                               lang: List[str] = [], extensions: List[str] = [], count: int = 10) -> ResultPaginator:
         if not q:
             raise EmptyQueryError
         if not phrase and not words:
             raise Exception("You should either specify 'words=True' to match words, or 'phrase=True' to match phrase.")
 
-        payload = "%s/fulltext/%s?" % (self.domain, quote(q))
+        payload = "%s/fulltext/%s?" % (self.mirror, quote(q))
         if phrase:
             check = q.split(' ')
             if len(check) < 2:
@@ -417,6 +463,6 @@ class AsyncZlib:
             for ext in extensions:
                 payload += '&extensions%5B%5D={}'.format(ext)
 
-        paginator = ResultPaginator(url=payload, count=count, request=self._r, domain=self.domain)
+        paginator = ResultPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()
         return paginator

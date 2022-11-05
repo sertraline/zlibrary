@@ -1,10 +1,31 @@
 # zlibrary
-(prototype)  
+**IMPORTANT**: zlibrary domains have been seized by USPS. From now on, zlibrary **only functions through tor**. Only tor users would be able to access it until it gets resolved; follow the [instructions below](#set-up-a-tor-service) on how to set up the tor service and run it.
 
 
 ### Install  
 `pip install zlibrary`  
 
+
+### Onion example
+You need to enable onion domains and set up a tor proxy before you can use the library. Moreover, tor version of zlibrary **requires you to have an account before you can access the site**. 
+```python
+import zlibrary
+import asyncio
+
+
+async def main():
+    lib = zlibrary.AsyncZlib(onion=True, proxy_list=['socks5://127.0.0.1:9050'])
+    # 127.0.0.1:9050 is the default address:port of tor service
+
+    # with tor, you need to log in first
+    await lib.login(email, password)
+
+    # now you can use it as usual
+    paginator = await lib.search(q="biology", count=10)
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
 
 ### Example
 ```python
@@ -138,3 +159,24 @@ await lib.login(email, password)
 await lib.init()
 
 ```
+
+### Set up a tor service
+`sudo apt install tor obfs4proxy` or `sudo pacman -S tor obfs4proxy`  
+`sudo systemctl enable --now tor`
+
+If tor is blocked in your country, you also need to edit /etc/tor/torrc and set up bridges for it to work properly.
+
+**HOW TO REQUEST BRIDGES**  
+Using gmail, send an email to `bridges@torproject.org` with the following content: `get transport obfs4`  
+
+Shortly after you should receive a reply with bridges.
+
+Edit /etc/tor/torrc to enable and add your bridges:
+```
+UseBridges 1
+ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+<INSERT YOUR BRIDGES HERE>
+```
+
+Restart tor service:
+`sudo systemctl restart tor`
