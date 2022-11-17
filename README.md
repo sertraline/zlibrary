@@ -160,6 +160,45 @@ await lib.init()
 
 ```
 
+### Download history
+```python
+await lib.login(email, password)
+
+# get a paginator of download history
+dhistory = await lib.profile.download_history()
+# get current page
+first_page = dhistory.result
+# get next page (if any; returns [] if empty)
+await dhistory.next_page()
+# go back
+await dhistory.prev_page()
+# fetch a book
+book = await dhistory.result[0].fetch()
+```  
+
+### Booklists
+```python
+await lib.login(email, password)
+# get booklists paginator
+bpage = await lib.profile.search_public_booklists(q="philosophy", count=10, order=zlibrary.OrderOptions.POPULAR)
+
+# get first 10 booklists
+first_set = await bpage.next()
+# get one booklist
+booklist = first_set[0]
+# get booklist data
+booklist_data = await booklist.fetch()
+# booklist_data = { 'name': 'VVV', url: 'YYY' }
+
+# get first 10 books from the booklist
+book_set = await booklist.next()
+# fetch a book
+book = await book_set[0].fetch()
+
+# fetch personal booklists
+bpage = await lib.profile.search_private_booklists(q="")
+```  
+
 ### Set up a tor service
 `sudo apt install tor obfs4proxy` or `sudo pacman -S tor obfs4proxy`  
 `sudo systemctl enable --now tor`
