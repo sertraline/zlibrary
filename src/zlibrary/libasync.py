@@ -1,17 +1,19 @@
 import asyncio
+import re
 
 from bs4 import BeautifulSoup as bsoup
-from typing import List
+from typing import List, Union
 from urllib.parse import quote
 
 from .logger import logger
-from .exception import EmptyQueryError, NoDomainError, ProxyNotMatchError
+from .exception import EmptyQueryError, ProxyNotMatchError, NoProfileError, NoDomainError
 from .util import GET_request, POST_request
 from .abs import SearchPaginator
 from .profile import ZlibProfile
+from .const import Extension, Language
 
 
-ZLIB_DOMAIN = "https://z-lib.org/"
+ZLIB_DOMAIN = "https://singlelogin.me/"
 LOGIN_DOMAIN = "https://singlelogin.me/rpc.php"
 
 ZLIB_TOR_DOMAIN = "http://bookszlibb74ugqojhzhg2a63w5i2atv5bqarulgczawnbmsb6s6qead.onion"
@@ -28,10 +30,20 @@ class AsyncZlib:
     cookies = None
     proxy_list = None
 
-    mirror = ""
+    _mirror = ""
     login_domain = None
     domain = None
     profile = None
+
+    @property
+    def mirror(self):
+        return self._mirror
+
+    @mirror.setter
+    def mirror(self, value):
+        if not value.startswith('http'):
+            value = 'https://' + value
+        self._mirror = value
 
     def __init__(self, onion: bool = False, proxy_list: list = None, disable_semaphore: bool = False):
         if proxy_list:
@@ -49,7 +61,7 @@ class AsyncZlib:
 
             if not proxy_list:
                 print("Tor proxy must be set to route through onion domains.\n"
-                      "Set up tor service and use: onion=True, proxy_list=['socks5://127.0.0.1:9050']")
+                      "Set up a tor service and use: onion=True, proxy_list=['socks5://127.0.0.1:9050']")
                 exit(1)
         else:
             self.login_domain = LOGIN_DOMAIN
@@ -57,27 +69,6 @@ class AsyncZlib:
 
         if disable_semaphore:
             self.semaphore = False
-
-    async def init(self):
-        if self.onion:
-            self.mirror = self.domain
-            logger.debug("Set working mirror: %s" % self.mirror)
-            return
-
-        page = await self._r(self.domain)
-        soup = bsoup(page, features='lxml')
-        check = soup.find('div', { 'class': 'domain-check-error hidden' })
-        if not check:
-            raise NoDomainError
-
-        dom = soup.find('div', { 'class': 'domain-check-success' })
-        if not dom:
-            raise NoDomainError
-
-        self.mirror = "%s" % dom.text.strip()
-        if not self.mirror.startswith('http'):
-            self.mirror = 'https://' + self.mirror
-        logger.debug("Set working mirror: %s" % self.mirror)
 
     async def _r(self, url: str):
         if self.semaphore:
@@ -115,6 +106,22 @@ class AsyncZlib:
                 self.cookies[cookie.key] = cookie.value
             logger.debug("Set cookies: %s", self.cookies)
 
+            self.mirror = self.domain
+            logger.info("Set working mirror: %s" % self.mirror)
+        else:
+            # make a request to singlelogin to fetch personal user domains
+            response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
+            rexpr = re.compile('const domainsList = (.*);', flags=re.MULTILINE)
+            get_const = rexpr.findall(response)
+            if get_const:
+                group = get_const[0].split('"')
+                domains = [dom for dom in group if not dom in [',', '[', ']']]
+                # todo: make domain check & switch logic
+                self.mirror = domains[0]
+                logger.info("Set working mirror: %s" % self.mirror)
+            else:
+                raise NoDomainError
+
         self.profile = ZlibProfile(self._r, self.cookies, self.mirror)
         return self.profile
 
@@ -123,7 +130,9 @@ class AsyncZlib:
         self.cookies = None
 
     async def search(self, q: str = "", exact: bool = False, from_year: int = None, to_year: int = None,
-                     lang: List[str] = [], extensions: List[str] = [], count: int = 10) -> SearchPaginator:
+                     lang: List[Union[Language, str]] = [], extensions: List[Union[Extension, str]] = [], count: int = 10) -> SearchPaginator:
+        if not self.profile:
+            raise NoProfileError
         if not q:
             raise EmptyQueryError
 
@@ -139,11 +148,11 @@ class AsyncZlib:
         if lang:
             assert type(lang) is list
             for l in lang:
-                payload += '&languages%5B%5D={}'.format(l)
+                payload += '&languages%5B%5D={}'.format(l if type(l) is str else l.value)
         if extensions:
             assert type(extensions) is list
             for ext in extensions:
-                payload += '&extensions%5B%5D={}'.format(ext)
+                payload += '&extensions%5B%5D={}'.format(ext if type(ext) is str else ext.value)
 
         paginator = SearchPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()
@@ -151,7 +160,9 @@ class AsyncZlib:
 
     async def full_text_search(self, q: str = "", exact: bool = False, phrase: bool = False,
                                words: bool = False, from_year: int = None, to_year: int = None,
-                               lang: List[str] = [], extensions: List[str] = [], count: int = 10) -> SearchPaginator:
+                               lang: List[Union[Language, str]] = [], extensions: List[Union[Extension, str]] = [], count: int = 10) -> SearchPaginator:
+        if not self.profile:
+            raise NoProfileError
         if not q:
             raise EmptyQueryError
         if not phrase and not words:
@@ -178,11 +189,11 @@ class AsyncZlib:
         if lang:
             assert type(lang) is list
             for l in lang:
-                payload += '&languages%5B%5D={}'.format(l)
+                payload += '&languages%5B%5D={}'.format(l if type(l) is str else l.value)
         if extensions:
             assert type(extensions) is list
             for ext in extensions:
-                payload += '&extensions%5B%5D={}'.format(ext)
+                payload += '&extensions%5B%5D={}'.format(ext if type(ext) is str else ext.value)
 
         paginator = SearchPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()

@@ -8,7 +8,7 @@ from .logger import logger
 import json
 
 
-D_NOTFOUND = 'Downloads not found'
+DLNOTFOUND = 'Downloads not found'
 LISTNOTFOUND = 'On your request nothing has been found'
 
 
@@ -29,10 +29,18 @@ class SearchPaginator:
     }
 
     def __init__(self, url: str, count: int, request: Callable, mirror: str):
+        if count > 50:
+            count = 50
+        if count <= 0:
+            count = 1
         self.count = count
         self.__url = url
         self.__r = request
         self.mirror = mirror
+
+    def __repr__(self):
+        fmt = '<Paginator [%s], count %d, len(result): %d, pages in storage: %d>'
+        return  fmt % (self.__url, self.count, len(self.result), len(self.storage.keys()))
 
     def parse_page(self, page):
         soup = bsoup(page, features='lxml')
@@ -200,6 +208,10 @@ class BooklistPaginator:
         self.__r = request
         self.mirror = mirror
 
+    def __repr__(self):
+        fmt = '<Booklist paginator [%s], count %d, len(result): %d, pages in storage: %d>'
+        return  fmt % (self.__url, self.count, len(self.result), len(self.storage.keys()))
+
     def parse_page(self, page):
         soup = bsoup(page, features='lxml')
 
@@ -353,6 +365,9 @@ class DownloadsPaginator:
         self.mirror = mirror
         self.page = page
 
+    def __repr__(self):
+        return '<Downloads paginator [%s]>' % self.__url
+
     def parse_page(self, page):
         soup = bsoup(page, features='lxml')
         box = soup.find('div', { 'class': 'dstats-content' })
@@ -360,7 +375,7 @@ class DownloadsPaginator:
             raise ParseError("Could not parse downloads list.")
 
         check_notfound = box.find('p')
-        if check_notfound and D_NOTFOUND in check_notfound.text.strip():
+        if check_notfound and DLNOTFOUND in check_notfound.text.strip():
             logger.debug("This page is empty.")
             self.storage[self.page] = []
             self.result = []
@@ -426,6 +441,9 @@ class BookItem(dict):
         self.__r = request
         self.mirror = mirror
 
+    def __repr__(self):
+        return '<BookItem [%s]>' % self.get('url')
+
     async def fetch(self):
         page = await self.__r(self['url'])
         soup = bsoup(page, features='lxml')
@@ -485,8 +503,11 @@ class BookItem(dict):
         dl_link = det.find('a', { 'class': 'dlButton' })
         if not dl_link:
             raise ParseError("Could not parse the download link.")
-
-        parsed['download_url'] = '%s%s' % (self.mirror, dl_link.get('href'))
+        
+        if 'unavailable' in dl_link.text:
+            parsed['download_url'] = 'Unavailable (use tor to download)'
+        else:
+            parsed['download_url'] = '%s%s' % (self.mirror, dl_link.get('href'))
         self.parsed = parsed
         return parsed
 
@@ -511,6 +532,9 @@ class BooklistItemPaginator(dict):
         self.__r = request
         self.mirror = mirror
         self.count = count
+
+    def __repr__(self):
+        return '<BooklistItem paginator, count %d>' % self.count
 
     async def fetch(self):
         parsed = {}

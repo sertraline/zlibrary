@@ -1,31 +1,10 @@
 # zlibrary
-**IMPORTANT**: zlibrary domains have been seized by USPS. From now on, zlibrary **only functions through tor**. Only tor users would be able to access it until it gets resolved; follow the [instructions below](#set-up-a-tor-service) on how to set up the tor service and run it.
+Update: Zlibrary is back to clearnet in Hydra mode, see #11.
 
 
 ### Install  
 `pip install zlibrary`  
 
-
-### Onion example
-You need to enable onion domains and set up a tor proxy before you can use the library. Moreover, tor version of zlibrary **requires you to have an account before you can access the site**. 
-```python
-import zlibrary
-import asyncio
-
-
-async def main():
-    lib = zlibrary.AsyncZlib(onion=True, proxy_list=['socks5://127.0.0.1:9050'])
-    # 127.0.0.1:9050 is the default address:port of tor service
-
-    # with tor, you need to log in first
-    await lib.login(email, password)
-
-    # now you can use it as usual
-    paginator = await lib.search(q="biology", count=10)
-
-if __name__ == '__main__':
-    asyncio.run(main())
-```
 
 ### Example
 ```python
@@ -35,8 +14,8 @@ import asyncio
 
 async def main():
     lib = zlibrary.AsyncZlib()
-    # init fires up a request to check currently available domain
-    await lib.init()
+    # zlibrary requires a singlelogin account in order to access the website
+    await lib.login(email, password)
 
     # count: 10 results per set
     paginator = await lib.search(q="biology", count=10)
@@ -64,12 +43,12 @@ async def main():
     #         'url': 'https://x.x/book/123',
     #         'cover': 'https://x.x/2f.jpg',
     #         'name': 'Numerical Python',
-    #         'publisher': 'ISureHopeThisPublisherNeverScansReposForDMCA',
-    #         'publisher_url': 'https://x.x/s/?q=SomePress',
+    #         'publisher': 'No Fun Allowed LLC',
+    #         'publisher_url': 'https://x.x/s/?q=NoFunAllowedLLC',
     #         'authors': [
     #             {
     #               'author': 'Ben Dover',
-    #               'author_url': 'https://x.x/g/Ben Dover'
+    #               'author_url': 'https://x.x/g/Ben_Dover'
     #             }
     #         ],
     #         'year': '2019',
@@ -100,7 +79,7 @@ async def main():
     #     'description': "Leverage the numerical and mathematical modules...",
     #     'year': '2019',
     #     'edition': '2',
-    #     'publisher': 'ISureHopeThisPublisherNeverScansReposForDMCA',
+    #     'publisher': 'No Fun Allowed LLC',
     #     'language': 'english',
     #     'categories': 'Computers - Computer Science',
     #     'categories_url': 'https://x.x/category/173/Computers-Computer-Science',
@@ -115,6 +94,39 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```  
 
+
+### Search params
+```python
+from zlibrary import Language, Extension
+
+await lib.search(q="Deleuze", from_year=1976, to_year=2005,
+                 lang=[Language.ENGLISH, Language.RUSSIAN], extensions=[Extension.PDF, Extension.EPUB])
+
+await lib.full_text_search(q="The circuits of surveillance cameras are themselves part of the decor of simulacra",
+                           lang=[Language.ENGLISH], extensions=[Extension.PDF], phrase=True, exact=True)
+```  
+
+
+### Onion example
+You need to enable onion domains and set up a tor proxy before you can use the library.
+```python
+import zlibrary
+import asyncio
+
+
+async def main():
+    lib = zlibrary.AsyncZlib(onion=True, proxy_list=['socks5://127.0.0.1:9050'])
+    # 127.0.0.1:9050 is the default address:port of tor service
+    # tor website cannot be accessed without login
+    await lib.login(email, password)
+
+    # now you can use it as usual
+    paginator = await lib.search(q="biology", count=10)
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
 ### Enable logging  
 Put anywhere in your code:  
 
@@ -123,24 +135,6 @@ import logging
 
 logging.getLogger("zlibrary").addHandler(logging.StreamHandler())
 logging.getLogger("zlibrary").setLevel(logging.DEBUG)
-```  
-
-### Login
-```python
-lib = zlibrary.AsyncZlib()
-await lib.login(email, password)
-
-# next requests will use cookies gathered on login
-await lib.init()
-```  
-
-### Search params
-```python
-await lib.search(q="Deleuze", from_year=1976, to_year=2005,
-                 lang=["english", "russian"], extensions=["pdf", "epub"])
-
-await lib.full_text_search(q="The circuits of surveillance cameras are themselves part of the decor of simulacra",
-                           lang=["english"], extensions=["pdf"], phrase=True, exact=True)
 ```  
 
 ### Proxy support 
@@ -200,7 +194,7 @@ bpage = await lib.profile.search_private_booklists(q="")
 ```  
 
 ### Set up a tor service
-`sudo apt install tor obfs4proxy` or `sudo pacman -S tor obfs4proxy`  
+`sudo apt install tor obfs4proxy` or `yay -S tor obfs4proxy` for Arch  
 `sudo systemctl enable --now tor`
 
 If tor is blocked in your country, you also need to edit /etc/tor/torrc and set up bridges for it to work properly.

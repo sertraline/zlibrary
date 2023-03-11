@@ -1,11 +1,5 @@
 from .abs import BooklistPaginator
-from enum import Enum
-
-
-class OrderOptions(Enum):
-    POPULAR = "popular"
-    NEWEST = "date_created"
-    RECENT = "date_updated"
+from .const import OrderOptions
 
 
 class Booklists:

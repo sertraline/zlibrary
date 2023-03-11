@@ -15,7 +15,7 @@ class ParseError(Exception):
 class NoDomainError(Exception):
 
     def __init__(self):
-        super().__init__("No working domain found. Try another time.")
+        super().__init__("No working domains have been found. Try again later.")
 
 
 class EmptyQueryError(Exception):
@@ -28,3 +28,9 @@ class ProxyNotMatchError(Exception):
 
     def __init__(self):
         super().__init__("proxy_list must be a list.")
+
+
+class NoProfileError(Exception):
+
+    def __init__(self):
+        super().__init__("You have to log in into your singlelogin.me account to access zlibrary. Use login() before performing the search.")
