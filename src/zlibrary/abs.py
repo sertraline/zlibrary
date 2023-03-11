@@ -441,9 +441,6 @@ class BookItem(dict):
         self.__r = request
         self.mirror = mirror
 
-    def __repr__(self):
-        return '<BookItem [%s]>' % self.get('url')
-
     async def fetch(self):
         page = await self.__r(self['url'])
         soup = bsoup(page, features='lxml')
@@ -532,9 +529,6 @@ class BooklistItemPaginator(dict):
         self.__r = request
         self.mirror = mirror
         self.count = count
-
-    def __repr__(self):
-        return '<BooklistItem paginator, count %d>' % self.count
 
     async def fetch(self):
         parsed = {}
