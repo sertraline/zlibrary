@@ -7,6 +7,7 @@ from .booklists import Booklists, OrderOptions
 class ZlibProfile:
     __r = None
     cookies = {}
+    domain = None
     mirror = None
 
     def __init__(self, request, cookies, mirror, domain):
