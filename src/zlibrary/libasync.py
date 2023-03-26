@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from .logger import logger
 from .exception import EmptyQueryError, ProxyNotMatchError, NoProfileError, NoDomainError
-from .util import GET_request, POST_request
+from .util import GET_request, POST_request, HEAD_request
 from .abs import SearchPaginator
 from .profile import ZlibProfile
 from .const import Extension, Language
@@ -113,16 +113,26 @@ class AsyncZlib:
             response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
             rexpr = re.compile('const domainsList = (.*);', flags=re.MULTILINE)
             get_const = rexpr.findall(response)
+            if not get_const:
+                rexpr = re.compile('const domainsListBooks = (.*);', flags=re.MULTILINE)
+                get_const = rexpr.findall(response)
+
             if get_const:
                 group = get_const[0].split('"')
                 domains = [dom for dom in group if not dom in [',', '[', ']']]
-                # todo: make domain check & switch logic
-                self.mirror = domains[0]
-                logger.info("Set working mirror: %s" % self.mirror)
-            else:
+
+                for dom in domains:
+                    if not dom.startswith('http'):
+                        dom = 'https://' + dom
+                    conn = await HEAD_request(dom, proxy_list=self.proxy_list)
+                    if conn != 0:
+                        self.mirror = dom
+                        logger.info("Set working mirror: %s" % self.mirror)
+                        break
+            if not self.mirror:
                 raise NoDomainError
 
-        self.profile = ZlibProfile(self._r, self.cookies, self.mirror)
+        self.profile = ZlibProfile(self._r, self.cookies, self.mirror, ZLIB_DOMAIN)
         return self.profile
 
     async def logout(self):

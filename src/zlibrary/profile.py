@@ -1,4 +1,5 @@
 from datetime import date
+from bs4 import BeautifulSoup as bsoup
 from .abs import DownloadsPaginator
 from .booklists import Booklists, OrderOptions
 
@@ -8,10 +9,39 @@ class ZlibProfile:
     cookies = {}
     mirror = None
 
-    def __init__(self, request, cookies, mirror):
+    def __init__(self, request, cookies, mirror, domain):
         self.__r = request
         self.cookies = cookies
         self.mirror = mirror
+        self.domain = domain
+
+    async def get_limits(self):
+        resp = await self.__r(self.domain)
+        soup = bsoup(resp, features='lxml')
+        card = soup.find('div', { 'class': 'user-card' })
+        user_card = card.find('div', { 'class': 'account-info' })
+        books_user = user_card.findAll('div', { 'class': 'item-info' })
+        daily = books_user[0]
+        total = books_user[1]
+
+        books_daily = daily.find('div', { 'class' : 'item-value books active' })
+        articles_daily = daily.find('div', { 'class': 'item-value articles' })
+
+        books_total = total.find('div', { 'class': 'item-value books active' })
+        articles_total = total.find('div', { 'class': 'item-value articles' })
+
+        response = {
+            'books': {
+                'daily': books_daily.text,
+                'total': books_total.text
+            },
+            'articles': {
+                'daily': articles_daily.text,
+                'total': articles_total.text
+            }
+        }
+        return response
+
 
     async def download_history(self, page: int = 1, date_from: date = None, date_to: date = None):
         if date_from:

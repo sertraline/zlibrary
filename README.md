@@ -170,6 +170,13 @@ await dhistory.prev_page()
 book = await dhistory.result[0].fetch()
 ```  
 
+### Download limits
+```python
+await lib.login(email, password)
+limit = await lib.profile.get_limits()
+# limit = {'books': {'daily': '0/10', 'total': '13'}, 'articles': {'daily': '0/30', 'total': '0'}}
+```  
+
 ### Booklists
 ```python
 await lib.login(email, password)

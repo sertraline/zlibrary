@@ -19,6 +19,13 @@ TIMEOUT = aiohttp.ClientTimeout(
     sock_read=90
 )
 
+HEAD_TIMEOUT = aiohttp.ClientTimeout(
+    total=4,
+    connect=0,
+    sock_connect=4,
+    sock_read=4
+)
+
 
 async def GET_request(url, cookies=None, proxy_list=None, save_cookies=False):
     try:
@@ -45,3 +52,16 @@ async def POST_request(url, data, proxy_list=None):
                 return (await resp.text(), sess.cookie_jar)
     except asyncio.exceptions.CancelledError:
         raise LoopError("Asyncio loop had been closed before request could finish.")
+
+
+async def HEAD_request(url, proxy_list=None):
+    try:
+        async with aiohttp.ClientSession(headers=HEAD, timeout=HEAD_TIMEOUT,
+                                         connector=ChainProxyConnector.from_urls(proxy_list) if proxy_list else None) as sess:
+            logger.info("Checking connectivity of %s..." % url)
+            async with sess.head(url) as resp:
+                return resp.status
+    except asyncio.exceptions.CancelledError:
+        raise LoopError("Asyncio loop had been closed before request could finish.")
+    except asyncio.exceptions.TimeoutError:
+        return 0
