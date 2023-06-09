@@ -13,8 +13,8 @@ from .profile import ZlibProfile
 from .const import Extension, Language
 
 
-ZLIB_DOMAIN = "https://singlelogin.me/"
-LOGIN_DOMAIN = "https://singlelogin.me/rpc.php"
+ZLIB_DOMAIN = "https://singlelogin.site/"
+LOGIN_DOMAIN = "https://singlelogin.site/rpc.php"
 
 ZLIB_TOR_DOMAIN = "http://bookszlibb74ugqojhzhg2a63w5i2atv5bqarulgczawnbmsb6s6qead.onion"
 LOGIN_TOR_DOMAIN = "http://loginzlib2vrak5zzpcocc3ouizykn6k5qecgj2tzlnab5wcbqhembyd.onion/rpc.php"

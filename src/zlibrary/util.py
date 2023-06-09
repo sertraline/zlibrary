@@ -13,10 +13,10 @@ HEAD = {
 
 
 TIMEOUT = aiohttp.ClientTimeout(
-    total=90,
+    total=180,
     connect=0,
-    sock_connect=60,
-    sock_read=90
+    sock_connect=120,
+    sock_read=180
 )
 
 HEAD_TIMEOUT = aiohttp.ClientTimeout(
