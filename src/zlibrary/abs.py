@@ -104,12 +104,14 @@ class SearchPaginator:
             year = data_table.find('div', { 'class': 'property_year' })
             if year:
                 year = year.find('div', { 'class': 'property_value' })
-                js['year'] = year.text.strip()
+                if year:
+                    js['year'] = year.text.strip()
 
             lang = data_table.find('div', { 'class': 'property_language' })
             if lang:
                 lang = lang.find('div', { 'class': 'property_value' })
-                js['language'] = lang.text.strip()
+                if lang:
+                    js['language'] = lang.text.strip()
 
             file = data_table.find('div', { 'class': 'property__file'})
             file = file.text.strip().split(',')
