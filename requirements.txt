@@ -7,7 +7,6 @@ attrs==21.4.0
 beautifulsoup4==4.10.0
 Brotli==1.0.9
 bs4==0.0.1
-cchardet==2.1.7
 cffi==1.15.0
 charset-normalizer==2.0.9
 frozenlist==1.2.0
