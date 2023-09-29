@@ -113,7 +113,6 @@ class AsyncZlib:
             response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
             rexpr = re.compile('const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
             get_const = rexpr.findall(response)
-            print(get_const)
             if not get_const:
                 rexpr = re.compile('const domainsListBooks = (.*);', flags=re.MULTILINE)
                 get_const = rexpr.findall(response)
