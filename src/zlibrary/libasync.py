@@ -111,15 +111,19 @@ class AsyncZlib:
         else:
             # make a request to singlelogin to fetch personal user domains
             response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
-            rexpr = re.compile('const (?:domains|books)(?:List|Domains) = (.*);', flags=re.MULTILINE)
+            rexpr = re.compile('const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
             get_const = rexpr.findall(response)
+            print(get_const)
             if not get_const:
                 rexpr = re.compile('const domainsListBooks = (.*);', flags=re.MULTILINE)
+                get_const = rexpr.findall(response)
+            if not get_const:
+                rexpr = re.compile('const domains = {books: \[(.*)\],', flags=re.MULTILINE)
                 get_const = rexpr.findall(response)
 
             if get_const:
                 group = get_const[0].split('"')
-                domains = [dom for dom in group if not dom in [',', '[', ']']]
+                domains = [dom for dom in group if not dom in [',', '[', ']', '']]
 
                 logger.info("Available domains: %s" % domains)
                 for dom in domains:
