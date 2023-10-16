@@ -6,9 +6,9 @@ from typing import List, Union
 from urllib.parse import quote
 
 from .logger import logger
-from .exception import EmptyQueryError, ProxyNotMatchError, NoProfileError, NoDomainError
+from .exception import EmptyQueryError, ProxyNotMatchError, NoProfileError, NoDomainError, NoIdError
 from .util import GET_request, POST_request, HEAD_request
-from .abs import SearchPaginator
+from .abs import SearchPaginator, BookItem
 from .profile import ZlibProfile
 from .const import Extension, Language
 
@@ -98,7 +98,8 @@ class AsyncZlib:
         logger.debug("Set cookies: %s", self.cookies)
 
         if self.onion:
-            url = self.domain + '/?remix_userkey=%s&remix_userid=%s' % (self.cookies['remix_userkey'], self.cookies['remix_userid'])
+            url = self.domain + '/?remix_userkey=%s&remix_userid=%s' % (
+                self.cookies['remix_userkey'], self.cookies['remix_userid'])
             resp, jar = await GET_request(url, proxy_list=self.proxy_list, cookies=self.cookies, save_cookies=True)
 
             self._jar = jar
@@ -111,18 +112,22 @@ class AsyncZlib:
         else:
             # make a request to singlelogin to fetch personal user domains
             response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
-            rexpr = re.compile('const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
+            rexpr = re.compile(
+                'const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
             get_const = rexpr.findall(response)
             if not get_const:
-                rexpr = re.compile('const domainsListBooks = (.*);', flags=re.MULTILINE)
+                rexpr = re.compile(
+                    'const domainsListBooks = (.*);', flags=re.MULTILINE)
                 get_const = rexpr.findall(response)
             if not get_const:
-                rexpr = re.compile('const domains = {books: \[(.*)\],', flags=re.MULTILINE)
+                rexpr = re.compile(
+                    'const domains = {books: \[(.*)\],', flags=re.MULTILINE)
                 get_const = rexpr.findall(response)
 
             if get_const:
                 group = get_const[0].split('"')
-                domains = [dom for dom in group if not dom in [',', '[', ']', '']]
+                domains = [dom for dom in group if not dom in [
+                    ',', '[', ']', '']]
 
                 logger.info("Available domains: %s" % domains)
                 for dom in domains:
@@ -136,7 +141,8 @@ class AsyncZlib:
             if not self.mirror:
                 raise NoDomainError
 
-        self.profile = ZlibProfile(self._r, self.cookies, self.mirror, ZLIB_DOMAIN)
+        self.profile = ZlibProfile(
+            self._r, self.cookies, self.mirror, ZLIB_DOMAIN)
         return self.profile
 
     async def logout(self):
@@ -162,15 +168,26 @@ class AsyncZlib:
         if lang:
             assert type(lang) is list
             for l in lang:
-                payload += '&languages%5B%5D={}'.format(l if type(l) is str else l.value)
+                payload += '&languages%5B%5D={}'.format(
+                    l if type(l) is str else l.value)
         if extensions:
             assert type(extensions) is list
             for ext in extensions:
-                payload += '&extensions%5B%5D={}'.format(ext if type(ext) is str else ext.value)
+                payload += '&extensions%5B%5D={}'.format(
+                    ext if type(ext) is str else ext.value)
 
-        paginator = SearchPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
+        paginator = SearchPaginator(
+            url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()
         return paginator
+
+    async def get_by_id(self, id: str = ""):
+        if not id:
+            raise NoIdError
+
+        book = BookItem(self._r, self.mirror)
+        book['url'] = '%s/book/%s' % (self.mirror, id)
+        return await book.fetch()
 
     async def full_text_search(self, q: str = "", exact: bool = False, phrase: bool = False,
                                words: bool = False, from_year: int = None, to_year: int = None,
@@ -180,7 +197,8 @@ class AsyncZlib:
         if not q:
             raise EmptyQueryError
         if not phrase and not words:
-            raise Exception("You should either specify 'words=True' to match words, or 'phrase=True' to match phrase.")
+            raise Exception(
+                "You should either specify 'words=True' to match words, or 'phrase=True' to match phrase.")
 
         payload = "%s/fulltext/%s?" % (self.mirror, quote(q))
         if phrase:
@@ -203,12 +221,15 @@ class AsyncZlib:
         if lang:
             assert type(lang) is list
             for l in lang:
-                payload += '&languages%5B%5D={}'.format(l if type(l) is str else l.value)
+                payload += '&languages%5B%5D={}'.format(
+                    l if type(l) is str else l.value)
         if extensions:
             assert type(extensions) is list
             for ext in extensions:
-                payload += '&extensions%5B%5D={}'.format(ext if type(ext) is str else ext.value)
+                payload += '&extensions%5B%5D={}'.format(
+                    ext if type(ext) is str else ext.value)
 
-        paginator = SearchPaginator(url=payload, count=count, request=self._r, mirror=self.mirror)
+        paginator = SearchPaginator(
+            url=payload, count=count, request=self._r, mirror=self.mirror)
         await paginator.init()
         return paginator
