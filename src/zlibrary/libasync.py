@@ -13,8 +13,8 @@ from .profile import ZlibProfile
 from .const import Extension, Language
 
 
-ZLIB_DOMAIN = "https://singlelogin.site/"
-LOGIN_DOMAIN = "https://singlelogin.site/rpc.php"
+ZLIB_DOMAIN = "https://singlelogin.re/"
+LOGIN_DOMAIN = "https://singlelogin.re/rpc.php"
 
 ZLIB_TOR_DOMAIN = "http://bookszlibb74ugqojhzhg2a63w5i2atv5bqarulgczawnbmsb6s6qead.onion"
 LOGIN_TOR_DOMAIN = "http://loginzlib2vrak5zzpcocc3ouizykn6k5qecgj2tzlnab5wcbqhembyd.onion/rpc.php"
@@ -110,34 +110,37 @@ class AsyncZlib:
             self.mirror = self.domain
             logger.info("Set working mirror: %s" % self.mirror)
         else:
-            # make a request to singlelogin to fetch personal user domains
-            response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
-            rexpr = re.compile(
-                'const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
-            get_const = rexpr.findall(response)
-            if not get_const:
-                rexpr = re.compile(
-                    'const domainsListBooks = (.*);', flags=re.MULTILINE)
-                get_const = rexpr.findall(response)
-            if not get_const:
-                rexpr = re.compile(
-                    'const domains = {books: \[(.*)\],', flags=re.MULTILINE)
-                get_const = rexpr.findall(response)
+            # This is temporarily removed
+            # ___________________________
+            # response = await GET_request(self.domain, proxy_list=self.proxy_list, cookies=self.cookies)
+            # rexpr = re.compile(
+            #     'const (?:domains|books)(?:List|Domains)? = (.*);', flags=re.MULTILINE)
+            # get_const = rexpr.findall(response)
+            # if not get_const:
+            #     rexpr = re.compile(
+            #         'const domainsListBooks = (.*);', flags=re.MULTILINE)
+            #     get_const = rexpr.findall(response)
+            # if not get_const:
+            #     rexpr = re.compile(
+            #         'const domains = {books: \[(.*)\],', flags=re.MULTILINE)
+            #     get_const = rexpr.findall(response)
 
-            if get_const:
-                group = get_const[0].split('"')
-                domains = [dom for dom in group if not dom in [
-                    ',', '[', ']', '']]
+            # if get_const:
+            #     group = get_const[0].split('"')
+            #     domains = [dom for dom in group if not dom in [
+            #         ',', '[', ']', '']]
 
-                logger.info("Available domains: %s" % domains)
-                for dom in domains:
-                    if not dom.startswith('http'):
-                        dom = 'https://' + dom
-                    conn = await HEAD_request(dom, proxy_list=self.proxy_list)
-                    if conn != 0:
-                        self.mirror = dom
-                        logger.info("Set working mirror: %s" % self.mirror)
-                        break
+            #    logger.info("Available domains: %s" % domains)
+            #    for dom in domains:
+            #        if not dom.startswith('http'):
+            #            dom = 'https://' + dom
+            #        conn = await HEAD_request(dom, proxy_list=self.proxy_list)
+            #        if conn != 0:
+            #            self.mirror = dom
+            #            logger.info("Set working mirror: %s" % self.mirror)
+            #            break
+            self.mirror = ZLIB_DOMAIN.strip('/')
+
             if not self.mirror:
                 raise NoDomainError
 

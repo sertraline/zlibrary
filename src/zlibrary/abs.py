@@ -521,7 +521,7 @@ class BookItem(dict):
             x), rating.text.replace('\n', '').split(' ')))
 
         det = soup.find('div', {'class': 'book-details-button'})
-        dl_link = det.find('a', {'class': 'dlButton'})
+        dl_link = det.find('a', {'class': 'addDownloadedBook'})
         if not dl_link:
             raise ParseError("Could not parse the download link.")
 
