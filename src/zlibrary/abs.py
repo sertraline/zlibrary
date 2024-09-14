@@ -82,8 +82,16 @@ class SearchPaginator:
                 js['cover'] = img.get('data-src')
 
             data_table = book.find('table')
-            name = data_table.find('h3', {'itemprop': 'name'})
+            name_and_bookmarks = data_table.find("h3")
+            if not name_and_bookmarks:
+                logger.debug(f"Error finding name and bookmarks h3 field.")
+                raise ParseError(
+                    "Could not parse %d-th book at url %s" % (idx, self.__url)
+                )
+
+            name = name_and_bookmarks.find("a")
             if not name:
+                logger.debug(f"Error finding name 'a' tag inside 'h3' field.")
                 raise ParseError(
                     "Could not parse %d-th book at url %s" % (idx, self.__url))
             js['name'] = name.text.strip()
@@ -521,7 +529,9 @@ class BookItem(dict):
             x), rating.text.replace('\n', '').split(' ')))
 
         det = soup.find('div', {'class': 'book-details-button'})
-        dl_link = det.find('a', {'class': 'addDownloadedBook'})
+        # Download link is now in dropdown menu
+        dropdown = det.find("ul", {"class": "dropdown-menu"})
+        dl_link = dropdown.find("a", {"class": "addDownloadedBook"})
         if not dl_link:
             raise ParseError("Could not parse the download link.")
 
