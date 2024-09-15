@@ -2,7 +2,8 @@ from datetime import date
 from bs4 import BeautifulSoup as bsoup
 from .abs import DownloadsPaginator
 from .booklists import Booklists, OrderOptions
-
+from .exception import ParseError
+from .logger import logger
 
 class ZlibProfile:
     __r = None
@@ -17,31 +18,36 @@ class ZlibProfile:
         self.domain = domain
 
     async def get_limits(self):
-        resp = await self.__r(self.domain)
-        soup = bsoup(resp, features='lxml')
-        card = soup.find('div', { 'class': 'user-card' })
-        user_card = card.find('div', { 'class': 'account-info' })
-        books_user = user_card.findAll('div', { 'class': 'item-info' })
-        daily = books_user[0]
-        total = books_user[1]
+        resp = await self.__r(self.mirror + "/users/downloads")
+        soup = bsoup(resp, features="lxml")
+        dstats = soup.find("div", {"class": "dstats-info"})
+        if not dstats:
+            raise ParseError(
+                f"Could not parse download limit at url: {self.mirror + '/users/downloads'}"
+            )
 
-        books_daily = daily.find('div', { 'class' : 'item-value books active' })
-        articles_daily = daily.find('div', { 'class': 'item-value articles' })
+        dl_info = dstats.find("div", {"class": "d-count"})
+        if not dl_info:
+            raise ParseError(
+                f"Could not parse download limit info at url: {self.mirror + '/users/downloads'}"
+            )
+        dl_info = dl_info.text.strip().split("/")
+        daily = int(dl_info[0])
+        allowed = int(dl_info[1])
 
-        books_total = total.find('div', { 'class': 'item-value books active' })
-        articles_total = total.find('div', { 'class': 'item-value articles' })
+        dl_reset = dstats.find("div", {"class": "d-reset"})
+        if not dl_reset:
+            logger.warning(f"Unable to parse the time for daily download reset.")
+            dl_reset = ""
+        else:
+            dl_reset = dl_reset.text.strip()
 
-        response = {
-            'books': {
-                'daily': books_daily.text,
-                'total': books_total.text
-            },
-            'articles': {
-                'daily': articles_daily.text,
-                'total': articles_total.text
-            }
+        return {
+            "daily_amount": daily,
+            "daily_allowed": allowed,
+            "daily_remaining": allowed - daily,
+            "daily_reset": dl_reset,
         }
-        return response
 
 
     async def download_history(self, page: int = 1, date_from: date = None, date_to: date = None):
