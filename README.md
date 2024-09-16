@@ -174,7 +174,7 @@ book = await dhistory.result[0].fetch()
 ```python
 await lib.login(email, password)
 limit = await lib.profile.get_limits()
-# limit = {'books': {'daily': '0/10', 'total': '13'}, 'articles': {'daily': '0/30', 'total': '0'}}
+# limit = { "daily_amount": x, "daily_allowed": x, "daily_remaining": x, "daily_reset": x }
 ```  
 
 ### Booklists
