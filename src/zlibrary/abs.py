@@ -1,5 +1,6 @@
-from typing import Callable
+from typing import Callable, Optional
 from bs4 import BeautifulSoup as bsoup
+from bs4 import Tag
 from urllib.parse import quote
 
 from .exception import ParseError
@@ -8,14 +9,14 @@ from .logger import logger
 import json
 
 
-DLNOTFOUND = 'Downloads not found'
-LISTNOTFOUND = 'On your request nothing has been found'
+DLNOTFOUND = "Downloads not found"
+LISTNOTFOUND = "On your request nothing has been found"
 
 
 class SearchPaginator:
     __url = ""
     __pos = 0
-    __r = None
+    __r: Optional[Callable] = None
 
     mirror = ""
     page = 1
@@ -24,9 +25,7 @@ class SearchPaginator:
 
     result = []
 
-    storage = {
-        1: []
-    }
+    storage = {1: []}
 
     def __init__(self, url: str, count: int, request: Callable, mirror: str):
         if count > 50:
@@ -39,23 +38,24 @@ class SearchPaginator:
         self.mirror = mirror
 
     def __repr__(self):
-        fmt = '<Paginator [%s], count %d, len(result): %d, pages in storage: %d>'
-        return fmt % (self.__url, self.count, len(self.result), len(self.storage.keys()))
+        return f"<Paginator [{self.__url}], count {self.count}, len(result): {len(self.result)}, pages in storage: {len(self.storage.keys())}>"
 
     def parse_page(self, page):
-        soup = bsoup(page, features='lxml')
-        box = soup.find('div', {'id': 'searchResultBox'})
-        if not box:
+        soup = bsoup(page, features="lxml")
+        box = soup.find("div", {"id": "searchResultBox"})
+        if not box or type(box) is not Tag:
             raise ParseError("Could not parse book list.")
 
-        check_notfound = soup.find('div', {'class': 'notFound'})
+        check_notfound = soup.find("div", {"class": "notFound"})
         if check_notfound:
             logger.debug("Nothing found.")
             self.storage[self.page] = []
             self.result = []
             return
 
-        book_list = box.findAll('div', {'class': 'resItemBox'})
+        with open("test.html", "w") as f:
+            f.write(str(box.prettify()))
+        book_list = box.findAll("div", {"class": "book-item"})
         if not book_list:
             raise ParseError("Could not find the book list.")
 
@@ -64,84 +64,70 @@ class SearchPaginator:
         for idx, book in enumerate(book_list, start=1):
             js = BookItem(self.__r, self.mirror)
 
-            book = book.find('table', {'class': 'resItemTable'})
-            cover = book.find('div', {'class': 'itemCoverWrapper'})
+            book = book.find("z-bookcard")
+            cover = book.find("img")
             if not cover:
-                logger.debug("Failure to parse %d-th book at url %s" %
-                             (idx, self.__url))
+                logger.debug(f"Failure to parse {idx}-th book at url {self.__url}")
                 continue
 
-            js['id'] = cover.get('data-book_id')
-            js['isbn'] = cover.get('data-isbn')
+            js["id"] = book.get("id")
+            js["isbn"] = book.get("isbn")
 
-            book_url = cover.find('a')
+            book_url = book.get("href")
             if book_url:
-                js['url'] = '%s%s' % (self.mirror, book_url.get('href'))
-            img = cover.find('img')
+                js["url"] = f"{self.mirror}{book_url}"
+            img = cover.find("img")
             if img:
-                js['cover'] = img.get('data-src')
+                js["cover"] = img.get("data-src")
 
-            data_table = book.find('table')
-            name_and_bookmarks = data_table.find("h3")
-            if not name_and_bookmarks:
-                logger.debug(f"Error finding name and bookmarks h3 field.")
-                raise ParseError(
-                    "Could not parse %d-th book at url %s" % (idx, self.__url)
-                )
-
-            name = name_and_bookmarks.find("a")
-            if not name:
-                logger.debug(f"Error finding name 'a' tag inside 'h3' field.")
-                raise ParseError(
-                    "Could not parse %d-th book at url %s" % (idx, self.__url))
-            js['name'] = name.text.strip()
-
-            publisher = data_table.find('a', {'title': 'Publisher'})
+            publisher = book.get("publisher")
             if publisher:
-                js['publisher'] = publisher.text.strip()
-                js['publisher_url'] = '%s%s' % (
-                    self.mirror, publisher.get('href'))
+                js["publisher"] = publisher.strip()
 
-            authors = data_table.find('div', {'class': 'authors'})
-            anchors = authors.findAll('a')
-            if anchors:
-                js['authors'] = []
-            for adx, an in enumerate(anchors, start=1):
-                js['authors'].append({
-                    'author': an.text.strip(),
-                    'author_url': '%s%s' % (self.mirror, quote(an.get('href')))
-                })
+            slot = book.find("div", {"slot": "author"})
+            if slot and slot.text:
+                authors = slot.text.split(";")
+                authors = [i.strip() for i in authors if i]
+                if authors:
+                    js["authors"] = authors
 
-            year = data_table.find('div', {'class': 'property_year'})
+            title = book.find("div", {"slot": "title"})
+            if title and title.text:
+                js["name"] = title.text.strip()
+
+            year = book.get("year")
             if year:
-                year = year.find('div', {'class': 'property_value'})
-                if year:
-                    js['year'] = year.text.strip()
+                js["year"] = year.strip()
 
-            lang = data_table.find('div', {'class': 'property_language'})
+            lang = book.get("language")
             if lang:
-                lang = lang.find('div', {'class': 'property_value'})
-                if lang:
-                    js['language'] = lang.text.strip()
+                js["language"] = lang.strip()
 
-            file = data_table.find('div', {'class': 'property__file'})
-            file = file.text.strip().split(',')
-            js['extension'] = file[0].split('\n')[1]
-            js['size'] = file[1]
+            ext = book.get("extension")
+            if ext:
+                js["extension"] = ext.strip()
 
-            rating = data_table.find('div', {'class': 'property_rating'})
-            js['rating'] = ''.join(filter(lambda x: bool(
-                x), rating.text.replace('\n', '').split(' ')))
+            size = book.get("filesize")
+            if size:
+                js["size"] = size.strip()
+
+            rating = book.get("rating")
+            if rating:
+                js["rating"] = rating.strip()
+
+            quality = book.get("quality")
+            if quality:
+                js["quality"] = quality.strip()
 
             self.storage[self.page].append(js)
 
-        scripts = soup.findAll('script')
+        scripts = soup.findAll("script")
         for scr in scripts:
             txt = scr.text
-            if 'var pagerOptions' in txt:
-                pos = txt.find('pagesTotal: ')
-                fix = txt[pos + len('pagesTotal: '):]
-                count = fix.split(',')[0]
+            if "var pagerOptions" in txt:
+                pos = txt.find("pagesTotal: ")
+                fix = txt[pos + len("pagesTotal: ") :]
+                count = fix.split(",")[0]
                 self.total = int(count)
 
     async def init(self):
@@ -149,13 +135,14 @@ class SearchPaginator:
         self.parse_page(page)
 
     async def fetch_page(self):
-        return await self.__r('%s&page=%d' % (self.__url, self.page))
+        if self.__r:
+            return await self.__r(f"{self.__url}&page={self.page}")
 
     async def next(self):
         if self.__pos >= len(self.storage[self.page]):
             await self.next_page()
 
-        self.result = self.storage[self.page][self.__pos: self.__pos + self.count]
+        self.result = self.storage[self.page][self.__pos : self.__pos + self.count]
         self.__pos += self.count
         return self.result
 
@@ -170,7 +157,7 @@ class SearchPaginator:
         if self.__pos <= 0:
             self.__pos = self.count
 
-        self.result = self.storage[self.page][subtract: self.__pos]
+        self.result = self.storage[self.page][subtract : self.__pos]
         return self.result
 
     async def next_page(self):
@@ -203,7 +190,7 @@ class SearchPaginator:
 class BooklistPaginator:
     __url = ""
     __pos = 0
-    __r = None
+    __r: Optional[Callable] = None
 
     mirror = ""
     page = 1
@@ -212,9 +199,7 @@ class BooklistPaginator:
 
     result = []
 
-    storage = {
-        1: []
-    }
+    storage = {1: []}
 
     def __init__(self, url: str, count: int, request: Callable, mirror: str):
         self.count = count
@@ -223,86 +208,95 @@ class BooklistPaginator:
         self.mirror = mirror
 
     def __repr__(self):
-        fmt = '<Booklist paginator [%s], count %d, len(result): %d, pages in storage: %d>'
-        return fmt % (self.__url, self.count, len(self.result), len(self.storage.keys()))
+        return f"<Booklist paginator [{self.__url}], count {self.count}, len(result): {len(self.result)}, pages in storage: {len(self.storage.keys())}>"
 
     def parse_page(self, page):
-        soup = bsoup(page, features='lxml')
+        soup = bsoup(page, features="lxml")
 
-        check_notfound = soup.find('div', {'class': 'cBox1'})
+        check_notfound = soup.find("div", {"class": "cBox1"})
         if check_notfound and LISTNOTFOUND in check_notfound.text.strip():
             logger.debug("Nothing found.")
             self.storage[self.page] = []
             self.result = []
             return
 
-        book_list = soup.findAll('div', {'class': 'readlist-item'})
+        book_list = soup.findAll("div", {"class": "z-booklist"})
         if not book_list:
             raise ParseError("Could not find the booklists.")
 
         self.storage[self.page] = []
 
-        for idx, book in enumerate(book_list, start=1):
+        for idx, booklist in enumerate(book_list, start=1):
             js = BooklistItemPaginator(self.__r, self.mirror, self.count)
 
-            name = book.find('div', {'class': 'title'})
+            name = booklist.get("topic")
             if not name:
                 raise ParseError(
-                    "Could not parse %d-th booklist at url %s" % (idx, self.__url))
-            js['name'] = name.text.strip()
+                    f"Could not parse {idx}-th booklist at url {self.__url}"
+                )
+            js["name"] = name.strip()
 
-            book_url = name.find('a')
+            book_url = booklist.get("href")
             if book_url:
-                js['url'] = '%s%s' % (self.mirror, book_url.get('href'))
+                js["url"] = f"{self.mirror}{book_url}"
 
-            info_wrap = book.find('div', {'class': 'readlist-info'})
+            info_wrap = booklist.get("description")
+            if info_wrap:
+                js["description"] = info_wrap.strip()
 
-            author = info_wrap.find('div', {'class': 'author'})
+            author = booklist.get("authorprofile")
             if author:
-                js['author'] = author.text.strip()
-            date = info_wrap.find('div', {'class': 'date'})
-            if date:
-                js['date'] = date.text.strip()
-            count = info_wrap.find('div', {'class': 'books-count'})
-            if count:
-                js['count'] = count.text.strip()
-            views = info_wrap.find('div', {'class': 'views-count'})
-            if views:
-                js['views'] = views.text.strip()
+                js["author"] = author.strip()
 
-            js['books_lazy'] = []
-            carousel = book.find('div', {'class': 'zlibrary-carousel'})
+            count = booklist.get("quantity")
+            if count:
+                js["count"] = count.strip()
+
+            views = booklist.get("views")
+            if views:
+                js["views"] = views.strip()
+
+            js["books_lazy"] = []
+            carousel = booklist.find("z-carousel")
             if not carousel:
                 self.storage[self.page].append(js)
                 continue
-            covers = carousel.findAll('div', {'class': 'carousel-cell-inner'})
+            books = carousel.findAll("a")
 
-            for adx, cover in enumerate(covers):
+            for adx, book in enumerate(books):
                 res = BookItem(self.__r, self.mirror)
-                anchor = cover.find('a')
-                if anchor:
-                    res['url'] = '%s%s' % (self.mirror, anchor.get('href'))
-                res['name'] = ""
+                res["url"] = f"{self.mirror}{book.get('href')}"
+                res["name"] = ""
 
-                check = cover.find('div', {'class': 'checkBookDownloaded'})
-                res['id'] = check['data-book_id']
+                zcover = book.find("z-cover")
+                if zcover:
+                    b_id = zcover.get("id")
+                    if b_id:
+                        res["id"] = b_id.strip()
+                    b_au = zcover.get("author")
+                    if b_au:
+                        res["author"] = b_au.strip()
+                    b_name = zcover.get("title")
+                    if b_name:
+                        res["name"] = b_name.strip()
+                    cover = zcover.find_all("img")
+                    if cover:
+                        for c in cover:
+                            d_src = c.get("data-src")
+                            if d_src:
+                                js["cover"] = d_src.strip()
 
-                img = check.find('img')
-                res['cover'] = img.get('data-flickity-lazyload')
-                if not res['cover']:
-                    res['cover'] = img.get('data-src')
-
-                js['books_lazy'].append(res)
+                js["books_lazy"].append(res)
 
             self.storage[self.page].append(js)
 
-        scripts = soup.findAll('script')
+        scripts = soup.findAll("script")
         for scr in scripts:
             txt = scr.text
-            if 'var pagerOptions' in txt:
-                pos = txt.find('pagesTotal: ')
-                fix = txt[pos + len('pagesTotal: '):]
-                count = fix.split(',')[0]
+            if "var pagerOptions" in txt:
+                pos = txt.find("pagesTotal: ")
+                fix = txt[pos + len("pagesTotal: ") :]
+                count = fix.split(",")[0]
                 self.total = int(count)
 
     async def init(self):
@@ -311,13 +305,14 @@ class BooklistPaginator:
         return self
 
     async def fetch_page(self):
-        return await self.__r('%s&page=%d' % (self.__url, self.page))
+        if self.__r:
+            return await self.__r(f"{self.__url}&page={self.page}")
 
     async def next(self):
         if self.__pos >= len(self.storage[self.page]):
             await self.next_page()
 
-        self.result = self.storage[self.page][self.__pos: self.__pos + self.count]
+        self.result = self.storage[self.page][self.__pos : self.__pos + self.count]
         self.__pos += self.count
         return self.result
 
@@ -332,7 +327,7 @@ class BooklistPaginator:
         if self.__pos <= 0:
             self.__pos = self.count
 
-        self.result = self.storage[self.page][subtract: self.__pos]
+        self.result = self.storage[self.page][subtract : self.__pos]
         return self.result
 
     async def next_page(self):
@@ -370,9 +365,7 @@ class DownloadsPaginator:
 
     result = []
 
-    storage = {
-        1: []
-    }
+    storage = {1: []}
 
     def __init__(self, url: str, page: int, request: Callable, mirror: str):
         self.__url = url
@@ -381,22 +374,22 @@ class DownloadsPaginator:
         self.page = page
 
     def __repr__(self):
-        return '<Downloads paginator [%s]>' % self.__url
+        return f"<Downloads paginator [{self.__url}]>"
 
     def parse_page(self, page):
-        soup = bsoup(page, features='lxml')
-        box = soup.find('div', {'class': 'dstats-content'})
-        if not box:
+        soup = bsoup(page, features="lxml")
+        box = soup.find("div", {"class": "dstats-content"})
+        if not box or type(box) is not Tag:
             raise ParseError("Could not parse downloads list.")
 
-        check_notfound = box.find('p')
+        check_notfound = box.find("p")
         if check_notfound and DLNOTFOUND in check_notfound.text.strip():
             logger.debug("This page is empty.")
             self.storage[self.page] = []
             self.result = []
             return
 
-        book_list = box.findAll('tr', {'class': 'dstats-row'})
+        book_list = box.findAll("tr", {"class": "dstats-row"})
         if not book_list:
             raise ParseError("Could not find the book list.")
 
@@ -405,16 +398,15 @@ class DownloadsPaginator:
         for _, book in enumerate(book_list, start=1):
             js = BookItem(self.__r, self.mirror)
 
-            title = book.find('div', {'class': 'book-title'})
-            date = book.find('td', {'class': 'lg-w-120'})
+            title = book.find("div", {"class": "book-title"})
+            date = book.find("td", {"class": "lg-w-120"})
 
-            js['name'] = title.text.strip()
-            js['date'] = date.text.strip()
+            js["name"] = title.text.strip()
+            js["date"] = date.text.strip()
 
-            book_url = book.find('a')
+            book_url = book.find("a")
             if book_url:
-                js['url'] = '%s%s' % (self.mirror, book_url.get('href'))
-
+                js["url"] = f"{self.mirror}{book_url.get('href')}"
             self.storage[self.page].append(js)
         self.result = self.storage[self.page]
 
@@ -424,7 +416,8 @@ class DownloadsPaginator:
         return self
 
     async def fetch_page(self):
-        return await self.__r('%s&page=%d' % (self.__url, self.page))
+        if self.__r:
+            return await self.__r(f"{self.__url}&page={self.page}")
 
     async def next_page(self):
         self.page += 1
@@ -450,6 +443,7 @@ class DownloadsPaginator:
 
 class BookItem(dict):
     parsed = None
+    __r: Optional[Callable] = None
 
     def __init__(self, request, mirror):
         super().__init__()
@@ -457,89 +451,95 @@ class BookItem(dict):
         self.mirror = mirror
 
     async def fetch(self):
-        page = await self.__r(self['url'])
-        soup = bsoup(page, features='lxml')
+        if not self.__r:
+            raise ParseError("Instance of BookItem does not contain a request method.")
+        page = await self.__r(self["url"])
+        soup = bsoup(page, features="lxml")
 
-        wrap = soup.find('div', {'class': 'row cardBooks'})
-        if not wrap:
-            raise ParseError("Failed to parse %s" % self['url'])
+        wrap = soup.find("div", {"class": "row cardBooks"})
+        if not wrap or type(wrap) is not Tag:
+            raise ParseError(f"Failed to parse {self['url']}")
 
         parsed = {}
-        parsed['url'] = self['url']
-        name = self.get('name')
-        if not name:
-            x = soup.find('h1', {'itemprop': 'name'})
-            name = x.text.replace('\n', '').strip()
+        parsed["url"] = self["url"]
 
-        a = self.get('authors')
-        if not a:
-            anchors = soup.findAll('a', {'itemprop': 'author'})
+        zcover = soup.find("z-cover")
+        if not zcover or type(zcover) is not Tag:
+            raise ParseError(f"Failed to find zcover in {self['url']}")
+
+        col = wrap.find("div", {"class": "col-sm-9"})
+        if col and type(col) is Tag:
+            anchors = col.find_all("a")
             if anchors:
-                parsed['authors'] = []
-            for adx, an in enumerate(anchors, start=1):
-                parsed['authors'].append({
-                    'author': an.text.strip(),
-                    'author_url': '%s%s' % (self.mirror, quote(an.get('href')))
-                })
+                parsed["authors"] = []
+                for anchor in anchors:
+                    parsed["authors"].append(
+                        {
+                            "author": anchor.text.strip(),
+                            "author_url": f"{self.mirror}{quote(anchor.get('href'))}",
+                        }
+                    )
 
-        parsed['name'] = name
+        title = zcover.get("title")
+        if title:
+            if type(title) is list[str]:
+                parsed["name"] = title[0].strip()
+            elif type(title) is str:
+                parsed["name"] = title.strip()
 
-        anchor = wrap.find('a', {'class': 'details-book-cover'})
-        if anchor:
-            parsed['cover'] = anchor.get('href')
+        cover = zcover.find("img", {"class": "image"})
+        if cover and type(cover) is Tag:
+            parsed["cover"] = cover.get("src")
 
-        desc = wrap.find('div', {'id': 'bookDescriptionBox'})
+        desc = wrap.find("div", {"id": "bookDescriptionBox"})
         if desc:
-            parsed['description'] = desc.text.strip()
+            parsed["description"] = desc.text.strip()
 
-        details = wrap.find('div', {'class': 'bookDetailsBox'})
+        details = wrap.find("div", {"class": "bookDetailsBox"})
 
-        properties = [
-            'year',
-            'edition',
-            'publisher',
-            'language'
-        ]
+        properties = ["year", "edition", "publisher", "language"]
         for prop in properties:
-            x = details.find('div', {'class': 'property_' + prop})
-            if x:
-                x = x.find('div', {'class': 'property_value'})
-                parsed[prop] = x.text.strip()
+            if type(details) is Tag:
+                x = details.find("div", {"class": "property_" + prop})
+                if x and type(x) is Tag:
+                    x = x.find("div", {"class": "property_value"})
+                    if x:
+                        parsed[prop] = x.text.strip()
 
-        isbns = details.findAll('div', {'class': 'property_isbn'})
-        for isbn in isbns:
-            txt = isbn.find('div', {'class': 'property_label'}).text.strip(':')
-            val = isbn.find('div', {'class': 'property_value'})
-            parsed[txt] = val.text.strip()
+        if type(details) is Tag:
+            isbns = details.findAll("div", {"class": "property_isbn"})
+            for isbn in isbns:
+                txt = isbn.find("div", {"class": "property_label"}).text.strip(":")
+                val = isbn.find("div", {"class": "property_value"})
+                parsed[txt] = val.text.strip()
 
-        cat = details.find('div', {'class': 'property_categories'})
-        if cat:
-            cat = cat.find('div', {'class': 'property_value'})
-            link = cat.find('a')
-            parsed['categories'] = cat.text.strip()
-            parsed['categories_url'] = '%s%s' % (self.mirror, link.get('href'))
+            cat = details.find("div", {"class": "property_categories"})
+            if cat and type(cat) is Tag:
+                cat = cat.find("div", {"class": "property_value"})
+                if cat and type(cat) is Tag:
+                    link = cat.find("a")
+                    if link and type(link) is Tag:
+                        parsed["categories"] = cat.text.strip()
+                        parsed["categories_url"] = f"{self.mirror}{link.get('href')}"
 
-        file = details.find('div', {'class': 'property__file'})
-        file = file.text.strip().split(',')
-        parsed['extension'] = file[0].split('\n')[1]
-        parsed['size'] = file[1].strip()
+            file = details.find("div", {"class": "property__file"})
+            if file and type(file) is Tag:
+                file = file.text.strip().split(",")
+                parsed["extension"] = file[0].split("\n")[1]
+                parsed["size"] = file[1].strip()
 
-        rating = wrap.find('div', {'class': 'book-rating'})
-        parsed['rating'] = ''.join(filter(lambda x: bool(
-            x), rating.text.replace('\n', '').split(' ')))
+        rating = wrap.find("div", {"class": "book-rating"})
+        if rating and type(rating) is Tag:
+            parsed["rating"] = "".join(
+                filter(lambda x: bool(x), rating.text.replace("\n", "").split(" "))
+            )
 
-        det = soup.find('div', {'class': 'book-details-button'})
-        # Download link is now in dropdown menu
-        dropdown = det.find("ul", {"class": "dropdown-menu"})
-        dl_link = dropdown.find("a", {"class": "addDownloadedBook"})
-        if not dl_link:
-            raise ParseError("Could not parse the download link.")
-
-        if 'unavailable' in dl_link.text:
-            parsed['download_url'] = 'Unavailable (use tor to download)'
-        else:
-            parsed['download_url'] = '%s%s' % (
-                self.mirror, dl_link.get('href'))
+        dl_btn = soup.find("a", {"class": "btn btn-default addDownloadedBook"})
+        if dl_btn and type(dl_btn) is Tag:
+            if "unavailable" in dl_btn.text:
+                parsed["download_url"] = "Unavailable (use tor to download)"
+            else:
+                parsed["download_url"] = f"{self.mirror}{dl_btn.get('href')}"
         self.parsed = parsed
         return parsed
 
@@ -555,9 +555,7 @@ class BooklistItemPaginator(dict):
 
     result = []
 
-    storage = {
-        1: []
-    }
+    storage = {1: []}
 
     def __init__(self, request, mirror, count: int = 10):
         super().__init__()
@@ -567,12 +565,12 @@ class BooklistItemPaginator(dict):
 
     async def fetch(self):
         parsed = {}
-        parsed['url'] = self['url']
-        parsed['name'] = self['name']
+        parsed["url"] = self["url"]
+        parsed["name"] = self["name"]
 
-        get_id = self['url'].split('/')[-2]
-        payload = "papi/booklist/%s/get-books" % get_id
-        self.__url = "%s/%s" % (self.mirror, payload)
+        get_id = self["url"].split("/")[-2]
+        payload = f"papi/booklist/{get_id}/get-books"
+        self.__url = f"{self.mirror}/{payload}"
 
         await self.init()
 
@@ -591,41 +589,41 @@ class BooklistItemPaginator(dict):
         for book in fjs["books"]:
             js = BookItem(self.__r, self.mirror)
 
-            js['id'] = book['book']['id']
-            js['isbn'] = book['book']['identifier']
+            js["id"] = book["book"]["id"]
+            js["isbn"] = book["book"]["identifier"]
 
-            book_url = book['book'].get('href')
+            book_url = book["book"].get("href")
             if book_url:
-                js['url'] = '%s%s' % (self.mirror, book_url)
+                js["url"] = f"{self.mirror}{book_url}"
 
-            js['cover'] = book['book'].get('cover')
-            js['name'] = book['book'].get('title')
+            js["cover"] = book["book"].get("cover")
+            js["name"] = book["book"].get("title")
 
-            js['publisher'] = book['book'].get('publisher')
+            js["publisher"] = book["book"].get("publisher")
 
-            js['authors'] = book['book'].get('author').split(',')
+            js["authors"] = book["book"].get("author").split(",")
 
-            js['year'] = book['book'].get('year')
-            js['language'] = book['book'].get('language')
+            js["year"] = book["book"].get("year")
+            js["language"] = book["book"].get("language")
 
-            js['extension'] = book['book'].get('extension')
-            js['size'] = book['book'].get('filesizeString')
+            js["extension"] = book["book"].get("extension")
+            js["size"] = book["book"].get("filesizeString")
 
-            js['rating'] = book['book'].get('qualityScore')
+            js["rating"] = book["book"].get("qualityScore")
 
             self.storage[self.page].append(js)
 
-        count = fjs['pagination']['total_pages']
+        count = fjs["pagination"]["total_pages"]
         self.total = int(count)
 
     async def fetch_json(self):
-        return await self.__r('%s/%d' % (self.__url, self.page))
+        return await self.__r(f"{self.__url}/{self.page}")
 
     async def next(self):
         if self.__pos >= len(self.storage[self.page]):
             await self.next_page()
 
-        self.result = self.storage[self.page][self.__pos: self.__pos + self.count]
+        self.result = self.storage[self.page][self.__pos : self.__pos + self.count]
         self.__pos += self.count
         return self.result
 
@@ -640,7 +638,7 @@ class BooklistItemPaginator(dict):
         if self.__pos <= 0:
             self.__pos = self.count
 
-        self.result = self.storage[self.page][subtract: self.__pos]
+        self.result = self.storage[self.page][subtract : self.__pos]
         return self.result
 
     async def next_page(self):

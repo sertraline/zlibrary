@@ -34,7 +34,7 @@ async def main():
     assert book.get('name')
     print(book)
 
-    book = await lib.get_by_id('437612/42d522')
+    book = await lib.get_by_id('5393918/a28f0c')
     assert book.get('name')
     print(book)
 
