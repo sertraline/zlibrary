@@ -8,6 +8,11 @@ class ParseError(Exception):
         super().__init__(message)
 
 
+class LoginFailed(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+
 class NoDomainError(Exception):
     def __init__(self):
         super().__init__("No working domains have been found. Try again later.")

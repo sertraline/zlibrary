@@ -115,3 +115,14 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+# Devenv
+.devenv*
+*.lock
+devenv.lock
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

@@ -1,3 +1,31 @@
+[project]
+name = "zlibrary"
+dynamic = ["version", "urls"]
+description = "Unofficial Z-Library API"
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = []
+authors = [
+    { name = "Akimitsu Mizuchi", email = "noise@acid.im" },
+]
+classifiers = [
+    "Programming Language :: Python",
+]
+dependencies = [
+  "aiodns",
+  "aiohttp",
+  "aiohttp_socks",
+  "Brotli",
+  "cffi",
+  "ujson",
+  "yarl",
+  "multidict",
+  "lxml",
+  "beautifulsoup4",
+  "bs4",
+  "attrs",
+]
+
 [build-system]
 requires = [
     "setuptools>=42",

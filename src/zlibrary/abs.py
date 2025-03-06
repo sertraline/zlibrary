@@ -220,7 +220,7 @@ class BooklistPaginator:
             self.result = []
             return
 
-        book_list = soup.findAll("div", {"class": "z-booklist"})
+        book_list = soup.findAll("z-booklist")
         if not book_list:
             raise ParseError("Could not find the booklists.")
 
@@ -257,13 +257,11 @@ class BooklistPaginator:
                 js["views"] = views.strip()
 
             js["books_lazy"] = []
-            carousel = booklist.find("z-carousel")
+            carousel = booklist.find_all("a")
             if not carousel:
                 self.storage[self.page].append(js)
                 continue
-            books = carousel.findAll("a")
-
-            for adx, book in enumerate(books):
+            for adx, book in enumerate(carousel):
                 res = BookItem(self.__r, self.mirror)
                 res["url"] = f"{self.mirror}{book.get('href')}"
                 res["name"] = ""

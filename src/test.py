@@ -1,4 +1,4 @@
-from zlibrary import AsyncZlib
+from zlibrary import AsyncZlib, booklists
 import asyncio
 import logging
 import os
@@ -10,6 +10,9 @@ logging.getLogger("zlibrary").setLevel(logging.DEBUG)
 async def main():
     lib = AsyncZlib()
     await lib.login(os.environ.get('ZLOGIN'), os.environ.get('ZPASSW'))
+
+    booklist = await lib.profile.search_public_booklists("test")
+    assert len(booklist.storage) > 0
 
     # count: 10 results per set
     paginator = await lib.search(q="biology", count=10)

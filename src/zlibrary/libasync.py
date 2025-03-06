@@ -11,12 +11,14 @@ from .exception import (
     NoProfileError,
     NoDomainError,
     NoIdError,
+    LoginFailed
 )
 from .util import GET_request, POST_request, GET_request_cookies
 from .abs import SearchPaginator, BookItem
 from .profile import ZlibProfile
 from .const import Extension, Language
 from typing import Optional
+import json
 
 
 ZLIB_DOMAIN = "https://z-library.sk/"
@@ -113,6 +115,11 @@ class AsyncZlib:
         resp, jar = await POST_request(
             self.login_domain, data, proxy_list=self.proxy_list
         )
+        resp = json.loads(resp)
+        resp = resp['response']
+        logger.debug(f"Login response: {resp}")
+        if resp.get('validationError'):
+            raise LoginFailed(json.dumps(resp, indent=4))
         self._jar = jar
 
         self.cookies = {}
