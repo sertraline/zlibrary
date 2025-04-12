@@ -79,6 +79,8 @@ class SearchPaginator:
             img = cover.find("img")
             if img:
                 js["cover"] = img.get("data-src")
+            else:
+                js["cover"] = cover.get("data-src")
 
             publisher = book.get("publisher")
             if publisher:
